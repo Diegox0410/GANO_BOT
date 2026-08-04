@@ -1,0 +1,28 @@
+{
+  "name": "@gano-bot/ingestion",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "gano-ingest": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "test": "node dist/tests/ingestion.test.js",
+    "start": "node dist/cli.js",
+    "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true});fs.rmSync('tsconfig.tsbuildinfo',{force:true})\""
+  },
+  "dependencies": {
+    "@gano-bot/ai-core": "*",
+    "exceljs": "^4.4.0",
+    "mammoth": "^1.10.0",
+    "pdfjs-dist": "^5.4.149"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "jszip": "^3.10.1"
+  }
+}
