@@ -2,7 +2,7 @@
   "name": "@gano-bot/chat-widget",
   "version": "0.1.0",
   "private": true,
-  "description": "Widget flotante de GanoBot para Gano Sim Premium.",
+  "description": "Widget conversacional universal, embebible y configurable.",
   "type": "module",
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -19,6 +19,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
+    "test": "npm run build && node dist/tests/widget.test.js",
     "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true});fs.rmSync('tsconfig.tsbuildinfo',{force:true})\""
   },
   "dependencies": {

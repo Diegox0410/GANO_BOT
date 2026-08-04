@@ -1704,3 +1704,9 @@ export function createMemoryChatPersistence():
   MemoryChatPersistence {
   return new MemoryChatPersistence();
 }
+
+export { AssistantWidget } from "./AssistantWidget.js";
+export { createAssistantWidget, defineAssistantWidgetElement } from "./embed.js";
+export { DirectApiTransport, HttpChatTransport, MockChatTransport, WidgetTransportError, parseSsePayload } from "./transport.js";
+export { InMemoryStorageAdapter, LocalStorageAdapter } from "./storage.js";
+export type { AssistantWidgetConfig, AssistantWidgetProps, ChatTransport as UniversalChatTransport, StorageAdapter, TokenProvider, WidgetEvent, WidgetMessage, WidgetState, WidgetTransportRequest, WidgetTransportResponse } from "./universal.types.js";
