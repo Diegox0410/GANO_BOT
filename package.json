@@ -44,7 +44,9 @@
   "license": "UNLICENSED",
   "devDependencies": {
     "@playwright/test": "^1.55.0",
+    "jsdom": "^25.0.1",
     "prettier": "^3.6.2",
+    "tldts": "^6.1.86",
     "typescript": "^5.9.2"
   },
   "allowScripts": {
