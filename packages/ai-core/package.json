@@ -15,6 +15,10 @@
     "./knowledge": {
       "types": "./dist/knowledge/index.d.ts",
       "import": "./dist/knowledge/index.js"
+    },
+    "./rag": {
+      "types": "./dist/rag/index.d.ts",
+      "import": "./dist/rag/index.js"
     }
   },
   "files": [

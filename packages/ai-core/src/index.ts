@@ -483,3 +483,4 @@ export * from "./providers";
 export * from "./chat";
 export * from "./runtime/index.js";
 export * as KnowledgePlatform from "./knowledge/index.js";
+export * as RAGEngine from "./rag/index.js";
