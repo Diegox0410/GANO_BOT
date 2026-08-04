@@ -9,6 +9,7 @@ import JSZip from "jszip";
 import { createInMemoryKnowledgeRepository } from "@gano-bot/ai-core/knowledge";
 import { ingestLocalFiles } from "../runner.js";
 import "./rag.test.js";
+import "./memory.test.js";
 
 const sourceDirectory = resolve(
   dirname(fileURLToPath(import.meta.url)),
