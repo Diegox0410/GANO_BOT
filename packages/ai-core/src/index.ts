@@ -481,3 +481,5 @@ export * from "./types";
 export * from "./embeddings";
 export * from "./providers";
 export * from "./chat";
+export * from "./runtime/index.js";
+export * as KnowledgePlatform from "./knowledge/index.js";
