@@ -11,6 +11,10 @@ import {
 import { InMemoryRequestAuditSink, RedactingLogger } from "../services.js";
 import type { AIMessage, AssistantDescriptor } from "@gano-bot/ai-core";
 import type { BackendChatGateway } from "../services.js";
+import {
+  InMemoryEnterpriseAdminService,
+  InMemoryEnterpriseRepository,
+} from "../admin/index.js";
 
 let assertions = 0;
 function assert(condition: boolean, message: string): void {
@@ -135,6 +139,27 @@ const app = createBackendApplication(
     ),
     now: () => new Date("2026-08-04T12:00:00.000Z"),
     generateId: (prefix) => `${prefix}-${++sequence}`,
+    enterpriseAdmin: new InMemoryEnterpriseAdminService(
+      new InMemoryEnterpriseRepository({
+        tenants: Object.freeze([
+          Object.freeze({
+            id: "tenant-a",
+            tenantId: "tenant-a",
+            name: "Tenant A",
+            slug: "tenant-a",
+            status: "active",
+          }),
+          Object.freeze({
+            id: "tenant-b",
+            tenantId: "tenant-b",
+            name: "Tenant B",
+            slug: "tenant-b",
+            status: "active",
+          }),
+        ]),
+      }),
+      () => "2026-08-04T12:00:00.000Z",
+    ),
   },
   {
     rateLimit: { limit: 50, windowMilliseconds: 60000 },
@@ -336,6 +361,66 @@ async function run(): Promise<void> {
     "debe redactar logs",
   );
   assert(audit.list().length >= 15, "debe auditar requests autenticadas");
+  const platformHeaders = {
+    authorization: "Bearer dev:platform:root:platform-admin",
+    "content-type": "application/json",
+  };
+  const adminTenants = await app.handle(
+    new Request("http://local/v1/admin/tenants?page=1&pageSize=1", {
+      headers: platformHeaders,
+    }),
+  );
+  const adminTenantsBody = await json(adminTenants);
+  const adminPage = adminTenantsBody.data as Readonly<Record<string, unknown>>;
+  assert(adminTenants.status === 200, "admin debe listar tenants");
+  assert(adminPage.total === 2, "admin debe paginar con total consistente");
+  const tenantView = await app.handle(
+    new Request("http://local/v1/admin/tenants", {
+      headers: {
+        authorization: "Bearer dev:tenant-a:admin:tenant-admin",
+      },
+    }),
+  );
+  const tenantViewBody = await json(tenantView);
+  const tenantPage = tenantViewBody.data as Readonly<Record<string, unknown>>;
+  assert(tenantPage.total === 1, "tenant admin no debe ver otro tenant");
+  const forbiddenAdmin = await app.handle(
+    new Request("http://local/v1/admin/security/policy-a", {
+      method: "PATCH",
+      headers: auth,
+      body: JSON.stringify({ retentionDays: 30 }),
+    }),
+  );
+  assert(forbiddenAdmin.status === 403, "backend debe rechazar mutación sin permiso");
+  const createdTenant = await app.handle(
+    new Request("http://local/v1/admin/tenants", {
+      method: "POST",
+      headers: platformHeaders,
+      body: JSON.stringify({ id: "tenant-c", name: "Tenant C", slug: "tenant-c" }),
+    }),
+  );
+  assert(createdTenant.status === 201, "platform admin debe crear tenant");
+  const invalidPagination = await app.handle(
+    new Request("http://local/v1/admin/users?page=0&pageSize=500", {
+      headers: platformHeaders,
+    }),
+  );
+  assert(invalidPagination.status === 400, "admin debe validar paginación");
+  const createdUser = await app.handle(
+    new Request("http://local/v1/admin/users", {
+      method: "POST",
+      headers: platformHeaders,
+      body: JSON.stringify({ id: "user-c", tenantId: "tenant-c", name: "User C", password: "never-store" }),
+    }),
+  );
+  const createdUserBody = await json(createdUser);
+  assert(!JSON.stringify(createdUserBody).includes("never-store"), "admin debe redactar secretos");
+  const auditEvents = await app.handle(
+    new Request("http://local/v1/admin/audit", { headers: platformHeaders }),
+  );
+  const auditEventsBody = await json(auditEvents);
+  const auditPage = auditEventsBody.data as Readonly<Record<string, unknown>>;
+  assert(Number(auditPage.total) >= 2, "mutaciones admin deben producir auditoría");
   console.log(
     `Backend/API: ${assertions} verificaciones deterministas correctas.`,
   );

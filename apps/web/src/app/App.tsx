@@ -7,6 +7,10 @@ import type {
   StudioPermission,
   StudioPrincipal,
 } from "../features/studio/domain";
+import { EnterpriseAdminApp } from "../features/admin/EnterpriseAdminApp";
+import { InMemoryEnterpriseAdminService } from "../features/admin/enterpriseAdminService";
+import type { EnterprisePrincipal } from "../features/admin/enterpriseAdmin.types";
+import type { EnterpriseRole } from "../features/admin/enterpriseAdmin.types";
 const PRINCIPAL: StudioPrincipal = Object.freeze({
   actorId: "developer-user",
   tenantId: "development-tenant",
@@ -20,6 +24,10 @@ const PRINCIPAL: StudioPrincipal = Object.freeze({
     "tools:configure",
     "metrics:read",
   ]),
+});
+const ENTERPRISE_PRINCIPAL: EnterprisePrincipal = Object.freeze({
+  ...PRINCIPAL,
+  roles: Object.freeze<EnterpriseRole[]>(["platform-admin"]),
 });
 function fixture(): StudioAssistant {
   const base = createEmptyAssistant(
@@ -66,10 +74,18 @@ function fixture(): StudioAssistant {
   });
 }
 export function App() {
-  const service = useMemo(
+  const studioService = useMemo(
     () =>
       new InMemoryAssistantStudioService(PRINCIPAL, Object.freeze([fixture()])),
     [],
   );
-  return <StudioApp service={service} />;
+  const adminService = useMemo(
+    () => new InMemoryEnterpriseAdminService(ENTERPRISE_PRINCIPAL),
+    [],
+  );
+  return location.pathname.startsWith("/admin") || location.pathname === "/" ? (
+    <EnterpriseAdminApp service={adminService} />
+  ) : (
+    <StudioApp service={studioService} />
+  );
 }

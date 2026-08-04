@@ -23,6 +23,8 @@ import {
   ToolLoopOrchestrator,
 } from "./services.js";
 import type { BackendChatGateway } from "./services.js";
+import { routeEnterpriseAdmin } from "./admin/routes.js";
+import type { EnterpriseAdminService } from "./admin/contracts.js";
 import type {
   ApiErrorResponse,
   ApiHealth,
@@ -67,6 +69,7 @@ export interface BackendDependencies {
   readonly logger?: Logger;
   readonly now?: () => Date;
   readonly generateId?: (prefix: string) => string;
+  readonly enterpriseAdmin?: EnterpriseAdminService;
 }
 const DEFAULT_CONFIG: BackendConfiguration = Object.freeze({
   requestTimeoutMilliseconds: 30000,
@@ -283,6 +286,14 @@ export class BackendApplication {
     const url = new URL(request.url);
     const path = url.pathname;
     const segments = path.split("/").filter(Boolean);
+    if (path.startsWith("/v1/admin/") && this.dependencies.enterpriseAdmin !== undefined) {
+      const response = await routeEnterpriseAdmin(request, this.dependencies.enterpriseAdmin, {
+        principal, requestId, correlationId,
+        readJson: () => this.readJson(request),
+        success: (data, status) => this.success(data, requestId, correlationId, status),
+      });
+      if (response !== undefined) return response;
+    }
     if (path === "/ready" && request.method === "GET")
       return this.success<ApiHealth>(
         {
@@ -919,7 +930,7 @@ export class BackendApplication {
       );
     const headers = this.headers(requestId, correlationId);
     if (origin !== null) headers.set("access-control-allow-origin", origin);
-    headers.set("access-control-allow-methods", "GET,POST,DELETE,OPTIONS");
+    headers.set("access-control-allow-methods", "GET,POST,PATCH,DELETE,OPTIONS");
     headers.set(
       "access-control-allow-headers",
       "authorization,content-type,x-request-id,x-correlation-id",
