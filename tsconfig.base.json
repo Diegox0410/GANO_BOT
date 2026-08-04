@@ -43,6 +43,9 @@
       "@gano-bot/ai-core/memory-engine": [
         "packages/ai-core/src/memory/index.ts"
       ],
+      "@gano-bot/ai-core/tools-engine": [
+        "packages/ai-core/src/tools-engine/index.ts"
+      ],
       "@gano-bot/shared": ["packages/shared/src/index.ts"],
       "@gano-bot/shared/*": ["packages/shared/src/*"],
       "@gano-bot/ai-core": ["packages/ai-core/src/index.ts"],

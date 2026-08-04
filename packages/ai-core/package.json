@@ -23,6 +23,10 @@
     "./memory-engine": {
       "types": "./dist/memory/index.d.ts",
       "import": "./dist/memory/index.js"
+    },
+    "./tools-engine": {
+      "types": "./dist/tools-engine/index.d.ts",
+      "import": "./dist/tools-engine/index.js"
     }
   },
   "files": [
