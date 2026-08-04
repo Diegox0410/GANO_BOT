@@ -1,0 +1,79 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "moduleDetection": "force",
+    "jsx": "react-jsx",
+
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "useUnknownInCatchVariables": true,
+    "alwaysStrict": true,
+
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "allowUnreachableCode": false,
+    "allowUnusedLabels": false,
+
+    "allowJs": false,
+    "checkJs": false,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": false,
+    "forceConsistentCasingInFileNames": true,
+
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@gano-bot/shared": [
+        "packages/shared/src/index.ts"
+      ],
+      "@gano-bot/shared/*": [
+        "packages/shared/src/*"
+      ],
+      "@gano-bot/ai-core": [
+        "packages/ai-core/src/index.ts"
+      ],
+      "@gano-bot/ai-core/*": [
+        "packages/ai-core/src/*"
+      ],
+      "@gano-bot/chat-widget": [
+        "packages/chat-widget/src/index.ts"
+      ],
+      "@gano-bot/chat-widget/*": [
+        "packages/chat-widget/src/*"
+      ],
+      "@gano-bot/business-engine-adapter": [
+        "packages/business-engine-adapter/src/index.ts"
+      ],
+      "@gano-bot/business-engine-adapter/*": [
+        "packages/business-engine-adapter/src/*"
+      ]
+    },
+
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+
+    "types": []
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/shared"
+    },
+    {
+      "path": "./packages/ai-core"
+    },
+    {
+      "path": "./packages/business-engine-adapter"
+    },
+    {
+      "path": "./packages/chat-widget"
+    },
+    {
+      "path": "./apps/web"
+    }
+  ]
+}

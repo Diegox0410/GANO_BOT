@@ -1,0 +1,69 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": true,
+
+    "paths": {
+  "@/*": [
+    "./src/*"
+  ],
+    "@gano-bot/shared": [
+        "../../packages/shared/src/index.ts"
+      ],
+      "@gano-bot/shared/*": [
+        "../../packages/shared/src/*"
+      ],
+      "@gano-bot/chat-widget": [
+        "../../packages/chat-widget/src/index.ts"
+      ],
+      "@gano-bot/chat-widget/*": [
+        "../../packages/chat-widget/src/*"
+      ],
+      "@gano-bot/ai-core": [
+        "../../packages/ai-core/src/index.ts"
+      ],
+      "@gano-bot/ai-core/*": [
+        "../../packages/ai-core/src/*"
+      ],
+      "@gano-bot/business-engine-adapter": [
+        "../../packages/business-engine-adapter/src/index.ts"
+      ],
+      "@gano-bot/business-engine-adapter/*": [
+        "../../packages/business-engine-adapter/src/*"
+      ]
+    },
+
+    "jsx": "react-jsx",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+
+    "types": [
+      "vite/client"
+    ],
+
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo"
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx"
+  ],
+  "exclude": [
+    "dist",
+    "coverage",
+    "node_modules",
+    "tests",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx"
+  ],
+  "references": [
+    {
+      "path": "./tsconfig.node.json"
+    }
+  ]
+}
