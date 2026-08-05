@@ -144,6 +144,22 @@ const reindex = await app.handle(
   ),
 );
 assert.equal(reindex.status, 200);
+const folder = await data<{ readonly folderId: string }>(
+  await app.handle(new Request(`http://local/v1/knowledge-manager/bases/${created.knowledgeBaseId}/folders`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ name: "Manuales" }) })),
+);
+assert.equal((await app.handle(new Request(`http://local/v1/knowledge-manager/documents/${firstId}/folder`, { method: "PUT", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ folderId: folder.folderId }) }))).status, 200);
+const filtered = await data<readonly { readonly documentId: string }[]>(await app.handle(new Request(`http://local/v1/knowledge-manager/bases/${created.knowledgeBaseId}/documents?folderId=${folder.folderId}`, { headers })));
+assert.equal(filtered.length, 1);
+const collection = await data<{ readonly collectionId: string }>(await app.handle(new Request(`http://local/v1/knowledge-manager/bases/${created.knowledgeBaseId}/collections`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ name: "Ventas" }) })));
+assert.equal((await app.handle(new Request(`http://local/v1/knowledge-manager/documents/${firstId}/collections`, { method: "PUT", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ collectionIds: [collection.collectionId] }) }))).status, 200);
+const collections = await data<readonly { readonly documentIds: readonly string[] }[]>(await app.handle(new Request(`http://local/v1/knowledge-manager/bases/${created.knowledgeBaseId}/collections`, { headers })));
+assert.equal(collections[0]?.documentIds[0], firstId);
+assert.equal((await app.handle(new Request(`http://local/v1/knowledge-manager/documents/${firstId}`, { method: "PATCH", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ title: "Garantía", language: "es-CO", tags: ["legal"] }) }))).status, 200);
+const versions = await data<readonly { readonly versionId: string }[]>(await app.handle(new Request(`http://local/v1/knowledge-manager/documents/${firstId}/versions`, { headers })));
+assert.ok(versions.length > 1);
+assert.equal((await app.handle(new Request(`http://local/v1/knowledge-manager/documents/${firstId}/versions/${versions[0]?.versionId ?? ""}`, { method: "POST", headers }))).status, 200);
+assert.equal((await app.handle(new Request(`http://local/v1/knowledge-manager/bases/${created.knowledgeBaseId}/assistants/assistant-http`, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify({ assistantTenantId: "tenant-other" }) }))).status, 403);
+assert.equal((await app.handle(new Request(`http://local/v1/knowledge-manager/folders/${folder.folderId}?baseId=${created.knowledgeBaseId}`, { method: "DELETE", headers }))).status, 200);
 const invalid = await app.handle(
   new Request(
     `http://local/v1/knowledge-manager/bases/${created.knowledgeBaseId}/documents`,
@@ -204,5 +220,5 @@ const citations = await createCitationBuilder().build({
 assert.ok(retrieval.items.some((item) => /garantía/i.test(item.chunk.content)));
 assert.equal(citations[0]?.documentId, firstId);
 console.log(
-  "Knowledge Manager Backend: multipart, jobs, preview, tenant, reindex, RAG y citas OK",
+  "Knowledge Manager Backend: flujo, organización, versiones, aislamiento, RAG y citas OK",
 );

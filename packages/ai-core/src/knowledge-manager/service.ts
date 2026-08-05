@@ -485,6 +485,7 @@ export class KnowledgeManagerService {
     id: string,
     input: {
       readonly title?: string;
+      readonly language?: string;
       readonly tags?: readonly string[];
       readonly metadata?: ManagedDocument["metadata"];
     },
@@ -497,6 +498,10 @@ export class KnowledgeManagerService {
         input.title === undefined
           ? current.title
           : normalized(input.title, "title"),
+      language:
+        input.language === undefined
+          ? current.language
+          : normalized(input.language, "language"),
       tags:
         input.tags === undefined
           ? current.tags
@@ -750,6 +755,7 @@ export class KnowledgeManagerService {
       updatedBy: principal.actorId,
     });
     await this.config.repository.saveDocument(value);
+    await this.snapshotDocument(principal, value, "Movimiento de carpeta");
     await this.record(principal, documentId, "document.moved");
     return value;
   }
@@ -803,6 +809,16 @@ export class KnowledgeManagerService {
       updatedBy: principal.actorId,
     });
     await this.config.repository.saveDocument(value);
+    for (const collection of collections) {
+      const contains = value.collectionIds.includes(collection.collectionId);
+      const documentIds = contains
+        ? [...new Set([...collection.documentIds, documentId])]
+        : collection.documentIds.filter((id) => id !== documentId);
+      await this.config.repository.saveCollection(
+        Object.freeze({ ...collection, documentIds: Object.freeze(documentIds) }),
+      );
+    }
+    await this.snapshotDocument(principal, value, "Actualización de colecciones");
     return value;
   }
   public async reindexDocument(

@@ -1,9 +1,22 @@
 import type {
   KnowledgePage,
+  KnowledgeCollection,
+  KnowledgeFolder,
+  KnowledgeVersion,
   ManagedDocument,
   ManagedDocumentPreview,
   ManagedKnowledgeBase,
 } from "@gano-bot/ai-core/knowledge-manager";
+export interface KnowledgeAssistantOption {
+  readonly id: string;
+  readonly name: string;
+  readonly tenantId: string;
+}
+export interface DocumentFilters {
+  readonly folderId?: string;
+  readonly collectionId?: string;
+  readonly tags?: readonly string[];
+}
 export interface KnowledgeManagerJob {
   readonly jobId: string;
   readonly status:
@@ -43,8 +56,23 @@ export interface KnowledgeManagerClient {
   ): Promise<KnowledgeManagerJob>;
   listDocuments(
     baseId: string,
+    filters?: DocumentFilters,
     signal?: AbortSignal,
   ): Promise<readonly ManagedDocument[]>;
+  updateDocument(id: string, input: Readonly<{ title: string; language: string; tags: readonly string[] }>, signal?: AbortSignal): Promise<ManagedDocument>;
+  listFolders(baseId: string, signal?: AbortSignal): Promise<readonly KnowledgeFolder[]>;
+  createFolder(baseId: string, name: string, signal?: AbortSignal): Promise<KnowledgeFolder>;
+  renameFolder(baseId: string, id: string, name: string, signal?: AbortSignal): Promise<KnowledgeFolder>;
+  deleteFolder(baseId: string, id: string, signal?: AbortSignal): Promise<boolean>;
+  moveDocument(id: string, folderId?: string, signal?: AbortSignal): Promise<ManagedDocument>;
+  listCollections(baseId: string, signal?: AbortSignal): Promise<readonly KnowledgeCollection[]>;
+  createCollection(baseId: string, name: string, signal?: AbortSignal): Promise<KnowledgeCollection>;
+  setDocumentCollections(id: string, collectionIds: readonly string[], signal?: AbortSignal): Promise<ManagedDocument>;
+  listVersions<T>(kind: "bases" | "documents", id: string, signal?: AbortSignal): Promise<readonly KnowledgeVersion<T>[]>;
+  restoreVersion<T>(kind: "bases" | "documents", id: string, versionId: string, signal?: AbortSignal): Promise<T>;
+  listAssistants(signal?: AbortSignal): Promise<readonly KnowledgeAssistantOption[]>;
+  associateAssistant(baseId: string, assistant: KnowledgeAssistantOption, signal?: AbortSignal): Promise<ManagedKnowledgeBase>;
+  disassociateAssistant(baseId: string, assistantId: string, signal?: AbortSignal): Promise<ManagedKnowledgeBase>;
   preview(
     documentId: string,
     signal?: AbortSignal,
@@ -113,12 +141,60 @@ export class BackendKnowledgeManagerClient implements KnowledgeManagerClient {
       signal,
     );
   }
-  public listDocuments(baseId: string, signal?: AbortSignal) {
+  public listDocuments(baseId: string, filters: DocumentFilters = {}, signal?: AbortSignal) {
+    const query = new URLSearchParams();
+    if (filters.folderId !== undefined) query.set("folderId", filters.folderId);
+    if (filters.collectionId !== undefined) query.set("collectionId", filters.collectionId);
+    for (const tag of filters.tags ?? []) query.append("tag", tag);
     return this.request<readonly ManagedDocument[]>(
-      `/v1/knowledge-manager/bases/${encodeURIComponent(baseId)}/documents`,
+      `/v1/knowledge-manager/bases/${encodeURIComponent(baseId)}/documents${query.size === 0 ? "" : `?${query.toString()}`}`,
       { method: "GET" },
       signal,
     );
+  }
+  public updateDocument(id: string, input: Readonly<{ title: string; language: string; tags: readonly string[] }>, signal?: AbortSignal) {
+    return this.json<ManagedDocument>(`/v1/knowledge-manager/documents/${encodeURIComponent(id)}`, "PATCH", input, signal);
+  }
+  public listFolders(baseId: string, signal?: AbortSignal) {
+    return this.request<readonly KnowledgeFolder[]>(`/v1/knowledge-manager/bases/${encodeURIComponent(baseId)}/folders`, { method: "GET" }, signal);
+  }
+  public createFolder(baseId: string, name: string, signal?: AbortSignal) {
+    return this.json<KnowledgeFolder>(`/v1/knowledge-manager/bases/${encodeURIComponent(baseId)}/folders`, "POST", { name }, signal);
+  }
+  public renameFolder(baseId: string, id: string, name: string, signal?: AbortSignal) {
+    return this.json<KnowledgeFolder>(`/v1/knowledge-manager/folders/${encodeURIComponent(id)}`, "PATCH", { baseId, name }, signal);
+  }
+  public async deleteFolder(baseId: string, id: string, signal?: AbortSignal) {
+    const value = await this.request<Readonly<{ deleted: boolean }>>(`/v1/knowledge-manager/folders/${encodeURIComponent(id)}?baseId=${encodeURIComponent(baseId)}`, { method: "DELETE" }, signal);
+    return value.deleted;
+  }
+  public moveDocument(id: string, folderId?: string, signal?: AbortSignal) {
+    return this.json<ManagedDocument>(`/v1/knowledge-manager/documents/${encodeURIComponent(id)}/folder`, "PUT", { folderId: folderId ?? "" }, signal);
+  }
+  public listCollections(baseId: string, signal?: AbortSignal) {
+    return this.request<readonly KnowledgeCollection[]>(`/v1/knowledge-manager/bases/${encodeURIComponent(baseId)}/collections`, { method: "GET" }, signal);
+  }
+  public createCollection(baseId: string, name: string, signal?: AbortSignal) {
+    return this.json<KnowledgeCollection>(`/v1/knowledge-manager/bases/${encodeURIComponent(baseId)}/collections`, "POST", { name }, signal);
+  }
+  public setDocumentCollections(id: string, collectionIds: readonly string[], signal?: AbortSignal) {
+    return this.json<ManagedDocument>(`/v1/knowledge-manager/documents/${encodeURIComponent(id)}/collections`, "PUT", { collectionIds }, signal);
+  }
+  public listVersions<T>(kind: "bases" | "documents", id: string, signal?: AbortSignal) {
+    return this.request<readonly KnowledgeVersion<T>[]>(`/v1/knowledge-manager/${kind}/${encodeURIComponent(id)}/versions`, { method: "GET" }, signal);
+  }
+  public restoreVersion<T>(kind: "bases" | "documents", id: string, versionId: string, signal?: AbortSignal) {
+    return this.request<T>(`/v1/knowledge-manager/${kind}/${encodeURIComponent(id)}/versions/${encodeURIComponent(versionId)}`, { method: "POST" }, signal);
+  }
+  public async listAssistants(signal?: AbortSignal) {
+    const values = await this.request<readonly Readonly<{ descriptor: Readonly<{ id: string; name?: string; tenantId?: string }> }>[]>("/v1/assistants", { method: "GET" }, signal);
+    return Object.freeze(values.map(({ descriptor }) => Object.freeze({ id: descriptor.id, name: descriptor.name ?? descriptor.id, tenantId: descriptor.tenantId ?? "development-tenant" })));
+  }
+  public associateAssistant(baseId: string, assistant: KnowledgeAssistantOption, signal?: AbortSignal) {
+    return this.json<ManagedKnowledgeBase>(`/v1/knowledge-manager/bases/${encodeURIComponent(baseId)}/assistants/${encodeURIComponent(assistant.id)}`, "POST", { assistantTenantId: assistant.tenantId }, signal);
+  }
+  public disassociateAssistant(baseId: string, assistantId: string, signal?: AbortSignal) {
+    return this.request<ManagedKnowledgeBase>(`/v1/knowledge-manager/bases/${encodeURIComponent(baseId)}/assistants/${encodeURIComponent(assistantId)}`, { method: "DELETE" }, signal);
   }
   public preview(id: string, signal?: AbortSignal) {
     return this.request<ManagedDocumentPreview>(
@@ -159,6 +235,9 @@ export class BackendKnowledgeManagerClient implements KnowledgeManagerClient {
       { method: "POST" },
       signal,
     );
+  }
+  private json<T>(path: string, method: "POST" | "PATCH" | "PUT", value: unknown, signal?: AbortSignal) {
+    return this.request<T>(path, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(value) }, signal);
   }
   private async request<T>(
     path: string,

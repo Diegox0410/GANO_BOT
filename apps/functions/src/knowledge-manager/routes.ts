@@ -211,9 +211,21 @@ export async function routeKnowledgeManager(
       segments[4] === "documents" &&
       request.method === "GET"
     )
-      return context.success(
-        await service.listDocuments(actor, segments[3] ?? ""),
-      );
+      {
+        const query = new URL(request.url).searchParams;
+        const tags = query.getAll("tag");
+        return context.success(
+          await service.listDocuments(actor, segments[3] ?? "", {
+            ...(query.has("folderId")
+              ? { folderId: query.get("folderId") ?? "" }
+              : {}),
+            ...(query.has("collectionId")
+              ? { collectionId: query.get("collectionId") ?? "" }
+              : {}),
+            ...(tags.length > 0 ? { tags: Object.freeze(tags) } : {}),
+          }),
+        );
+      }
     if (
       segments.length === 5 &&
       segments[2] === "bases" &&
@@ -262,6 +274,18 @@ export async function routeKnowledgeManager(
           data.name,
         ),
       );
+    }
+    if (
+      segments.length === 4 &&
+      segments[2] === "folders" &&
+      request.method === "DELETE"
+    ) {
+      const baseId = new URL(request.url).searchParams.get("baseId");
+      if (baseId === null)
+        throw new BackendApiError("BAD_REQUEST", "baseId es obligatorio.", 400);
+      return context.success({
+        deleted: await service.deleteFolder(actor, baseId, segments[3] ?? ""),
+      });
     }
     if (
       segments.length === 5 &&
@@ -337,11 +361,55 @@ export async function routeKnowledgeManager(
       return context.success(
         await service.updateDocument(actor, segments[3] ?? "", {
           ...(typeof data.title === "string" ? { title: data.title } : {}),
+          ...(typeof data.language === "string"
+            ? { language: data.language }
+            : {}),
           ...(Array.isArray(data.tags) &&
           data.tags.every((tag) => typeof tag === "string")
             ? { tags: data.tags as readonly string[] }
             : {}),
         }),
+      );
+    }
+    if (
+      segments.length === 5 &&
+      segments[2] === "documents" &&
+      segments[4] === "folder" &&
+      request.method === "PUT"
+    ) {
+      const data = body(await context.readJson());
+      return context.success(
+        await service.moveDocument(
+          actor,
+          segments[3] ?? "",
+          typeof data.folderId === "string" && data.folderId !== ""
+            ? data.folderId
+            : undefined,
+        ),
+      );
+    }
+    if (
+      segments.length === 5 &&
+      segments[2] === "documents" &&
+      segments[4] === "collections" &&
+      request.method === "PUT"
+    ) {
+      const data = body(await context.readJson());
+      if (
+        !Array.isArray(data.collectionIds) ||
+        !data.collectionIds.every((id) => typeof id === "string")
+      )
+        throw new BackendApiError(
+          "BAD_REQUEST",
+          "collectionIds debe ser un arreglo de strings.",
+          400,
+        );
+      return context.success(
+        await service.setDocumentCollections(
+          actor,
+          segments[3] ?? "",
+          data.collectionIds as readonly string[],
+        ),
       );
     }
     if (
@@ -429,6 +497,19 @@ export async function routeKnowledgeManager(
     )
       return context.success(await service.versions(actor, segments[3] ?? ""));
     if (
+      segments.length === 6 &&
+      (segments[2] === "bases" || segments[2] === "documents") &&
+      segments[4] === "versions" &&
+      request.method === "POST"
+    )
+      return context.success(
+        await service.restoreVersion(
+          actor,
+          segments[3] ?? "",
+          segments[5] ?? "",
+        ),
+      );
+    if (
       segments.length === 3 &&
       segments[2] === "jobs" &&
       request.method === "GET"
@@ -471,14 +552,19 @@ export async function routeKnowledgeManager(
       segments[2] === "bases" &&
       segments[4] === "assistants" &&
       request.method === "POST"
-    )
+    ) {
+      const data = body(await context.readJson());
       return context.success(
         await service.associateAssistant(
           actor,
           segments[3] ?? "",
           segments[5] ?? "",
+          typeof data.assistantTenantId === "string"
+            ? data.assistantTenantId
+            : actor.tenantId,
         ),
       );
+    }
     if (
       segments.length === 6 &&
       segments[2] === "bases" &&
