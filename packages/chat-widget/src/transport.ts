@@ -32,6 +32,46 @@ export interface HttpChatTransportConfig {
   readonly fetchImplementation?: typeof fetch;
 }
 const ALLOWED_HEADERS = new Set(["accept-language", "x-client-version"]);
+function combineAbortSignals(
+  signals: readonly AbortSignal[],
+): AbortSignal {
+  const availableSignals = signals.filter(
+    (signal) => signal !== undefined,
+  );
+
+  if (
+    typeof AbortSignal.any === "function"
+  ) {
+    return AbortSignal.any(availableSignals);
+  }
+
+  const controller = new AbortController();
+
+  const abortFromSignal = (
+    signal: AbortSignal,
+  ): void => {
+    if (controller.signal.aborted) {
+      return;
+    }
+
+    controller.abort(signal.reason);
+  };
+
+  for (const signal of availableSignals) {
+    if (signal.aborted) {
+      abortFromSignal(signal);
+      break;
+    }
+
+    signal.addEventListener(
+      "abort",
+      () => abortFromSignal(signal),
+      { once: true },
+    );
+  }
+
+  return controller.signal;
+}
 function headers(
   config: HttpChatTransportConfig,
   token: string | undefined,
@@ -162,8 +202,12 @@ export class HttpChatTransport implements ChatTransport {
   private readonly fetcher: typeof fetch;
   private readonly timeout: number;
   public constructor(private readonly config: HttpChatTransportConfig) {
-    this.fetcher = config.fetchImplementation ?? fetch;
-    this.timeout = config.timeoutMilliseconds ?? 30000;
+  this.fetcher =
+    config.fetchImplementation ??
+    ((input, init) => globalThis.fetch(input, init));
+
+  this.timeout =
+    config.timeoutMilliseconds ?? 30000;
   }
   public async send(
     request: WidgetTransportRequest,
@@ -173,7 +217,11 @@ export class HttpChatTransport implements ChatTransport {
     );
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort("timeout"), this.timeout);
-    const signal = AbortSignal.any([request.signal, controller.signal]);
+    const signal = combineAbortSignals([
+  request.signal,
+  controller.signal,
+]);
+
     try {
       const response = await this.fetcher(
         endpoint(this.config.apiUrl, "/v1/chat"),
