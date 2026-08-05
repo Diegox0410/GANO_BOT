@@ -173,6 +173,7 @@ export interface AssistantWidgetConfig extends AssistantWidgetCallbacks {
   readonly tokenProvider?: TokenProvider;
   readonly storage?: StorageAdapter;
   readonly initialConversationId?: string;
+  readonly initialMessage?: string;
   readonly locale?: string;
   readonly position?: WidgetPosition;
   readonly zIndex?: number;

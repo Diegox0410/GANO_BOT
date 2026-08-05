@@ -6,3 +6,4 @@ export * from "./services.js";
 export * from "./application.js";
 export * from "./admin/index.js";
 export * from "./knowledge-manager/index.js";
+export * from "./integrations/ganoSim.js";

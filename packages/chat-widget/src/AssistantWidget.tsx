@@ -70,6 +70,7 @@ export function AssistantWidget({ config, className }: AssistantWidgetProps) {
     WidgetToolConfirmation | undefined
   >();
   const abortRef = useRef<AbortController | undefined>(undefined);
+  const initialMessageSentRef = useRef(false);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -288,6 +289,16 @@ export function AssistantWidget({ config, className }: AssistantWidgetProps) {
       if (abortRef.current === controller) abortRef.current = undefined;
     }
   };
+  useEffect(() => {
+    if (
+      config.autoOpen &&
+      config.initialMessage !== undefined &&
+      !initialMessageSentRef.current
+    ) {
+      initialMessageSentRef.current = true;
+      void send(config.initialMessage);
+    }
+  }, [config.autoOpen, config.initialMessage]);
   const confirmTool = (accepted: boolean): void => {
     if (confirmation === undefined) return;
     try {

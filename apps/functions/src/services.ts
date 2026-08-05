@@ -35,9 +35,9 @@ export class AssistantManagerChatGateway implements BackendChatGateway {
     input: Parameters<BackendChatGateway["generate"]>[0],
   ): Promise<BackendChatTurn> {
     const toolResult = input.toolResults.at(-1);
-    const runtimeMessage: string | AIMessage =
+    const toolMessage: AIMessage | undefined =
       toolResult === undefined
-        ? input.request.message
+        ? undefined
         : Object.freeze({
             id: toolResult.executionId,
             conversationId: input.conversationId,
@@ -76,8 +76,11 @@ export class AssistantManagerChatGateway implements BackendChatGateway {
         actorId: input.actorId,
         locale: input.request.locale,
       }),
-      message: runtimeMessage,
-      history: input.messages,
+      message: input.request.message,
+      history:
+        toolMessage === undefined
+          ? input.messages
+          : Object.freeze([...input.messages, toolMessage]),
       useMemory: true,
       useKnowledge: input.request.groundingMode !== "general-allowed",
       signal: input.signal,
