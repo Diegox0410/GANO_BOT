@@ -1,0 +1,12 @@
+import { createServer } from "node:http";
+import { Readable } from "node:stream";
+import { createBackendApplication, InMemoryAssistantRepository } from "../apps/functions/dist/index.js";
+import { BrowserBytesDocumentProcessor } from "../apps/ingestion/dist/index.js";
+import { InMemoryKnowledgeManagerRepository, KnowledgeManagerService } from "../packages/ai-core/dist/knowledge-manager/index.js";
+const manager = new KnowledgeManagerService({ repository: new InMemoryKnowledgeManagerRepository(), processor: new BrowserBytesDocumentProcessor() });
+const chat = Object.freeze({ async generate() { throw new Error("Chat no configurado en el servidor local de Knowledge Manager."); } });
+const assistants = new InMemoryAssistantRepository();
+assistants.register(Object.freeze({ id: "support-assistant", tenantId: "development-tenant", name: "Asistente de soporte", version: "1.0.0", locale: "es", enabled: true, capabilities: Object.freeze({ conversation: true, intentDetection: true, contextBuilding: true, promptBuilding: true, responseValidation: true, chatFallback: true, embeddings: true, memory: true, knowledge: true, tools: false, streaming: true }) }));
+const application = createBackendApplication({ chat, assistants, knowledgeManager: manager }, { maximumBodyBytes: 60 * 1024 * 1024, allowedOrigins: Object.freeze(["http://127.0.0.1:5174", "http://localhost:5174"]) });
+const server = createServer(async (incoming, outgoing) => { try { const headers = new Headers(); for (const [name, value] of Object.entries(incoming.headers)) { if (Array.isArray(value)) for (const item of value) headers.append(name, item); else if (value !== undefined) headers.set(name, value); } const method = incoming.method ?? "GET"; const hasBody = method !== "GET" && method !== "HEAD"; const request = new Request(`http://127.0.0.1:8787${incoming.url ?? "/"}`, { method, headers, ...(hasBody ? { body: Readable.toWeb(incoming), duplex: "half" } : {}) }); const response = await application.handle(request); outgoing.statusCode = response.status; response.headers.forEach((value, name) => outgoing.setHeader(name, value)); outgoing.end(Buffer.from(await response.arrayBuffer())); } catch { outgoing.statusCode = 500; outgoing.setHeader("content-type", "application/json"); outgoing.end(JSON.stringify({ success: false, error: { code: "INTERNAL_ERROR", message: "Falló el servidor local." } })); } });
+server.listen(8787, "127.0.0.1", () => console.log("Knowledge Manager backend local: http://127.0.0.1:8787"));

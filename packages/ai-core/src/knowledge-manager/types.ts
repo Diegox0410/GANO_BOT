@@ -1,22 +1,265 @@
 import type { AIMetadata } from "../types.js";
-import type { KnowledgeChunk, KnowledgePermissions, KnowledgeSourceKind } from "../knowledge/index.js";
+import type {
+  KnowledgeChunk,
+  KnowledgePermissions,
+  KnowledgeSourceKind,
+} from "../knowledge/index.js";
 
-export type KnowledgeBaseStatus = "draft" | "active" | "indexing" | "ready" | "degraded" | "failed" | "archived";
-export type ManagedDocumentStatus = "selected" | "validating" | "queued" | "loading" | "parsing" | "normalizing" | "chunking" | "embedding-pending" | "indexing-pending" | "ready" | "partially-ready" | "failed" | "cancelled" | "archived";
-export type KnowledgeManagerPermission = "knowledge:read" | "knowledge:create" | "knowledge:update" | "knowledge:delete" | "knowledge:archive" | "knowledge:restore" | "knowledge:associate" | "documents:read" | "documents:create" | "documents:update" | "documents:delete" | "documents:reprocess" | "ingestion:read" | "ingestion:execute" | "ingestion:cancel" | "versions:read" | "versions:restore";
-export interface KnowledgeManagerPrincipal { readonly actorId: string; readonly tenantId: string; readonly permissions: readonly KnowledgeManagerPermission[]; }
-export interface KnowledgeBaseConfiguration { readonly retrievalEnabled: boolean; readonly embeddingState: "not-configured" | "pending" | "available"; readonly chunkingStrategyId: string; }
-export interface ManagedKnowledgeBase { readonly knowledgeBaseId: string; readonly tenantId: string; readonly name: string; readonly slug: string; readonly description: string; readonly language: string; readonly allowedLanguages: readonly string[]; readonly tags: readonly string[]; readonly status: KnowledgeBaseStatus; readonly version: number; readonly ownerId: string; readonly createdBy: string; readonly updatedBy: string; readonly createdAt: string; readonly updatedAt: string; readonly archivedAt?: string; readonly assistantIds: readonly string[]; readonly documentCount: number; readonly chunkCount: number; readonly totalSizeBytes: number; readonly lastIngestionAt?: string; readonly lastIndexedAt?: string; readonly configuration: KnowledgeBaseConfiguration; readonly permissions: KnowledgePermissions; readonly metadata: AIMetadata; }
-export interface ManagedDocumentError { readonly code: string; readonly message: string; readonly stage: ManagedDocumentStatus; }
-export interface ManagedDocument { readonly documentId: string; readonly tenantId: string; readonly knowledgeBaseId: string; readonly assistantId: string; readonly title: string; readonly originalFileName: string; readonly source: string; readonly sourceKind: KnowledgeSourceKind; readonly extension: string; readonly mimeType: string; readonly sizeBytes: number; readonly language: string; readonly checksum: string; readonly version: number; readonly status: ManagedDocumentStatus; readonly folderId?: string; readonly collectionIds: readonly string[]; readonly tags: readonly string[]; readonly permissions: KnowledgePermissions; readonly metadata: AIMetadata; readonly createdBy: string; readonly updatedBy: string; readonly createdAt: string; readonly updatedAt: string; readonly processedAt?: string; readonly indexedAt?: string; readonly archivedAt?: string; readonly chunkCount: number; readonly error?: ManagedDocumentError; }
-export interface KnowledgeFolder { readonly folderId: string; readonly tenantId: string; readonly knowledgeBaseId: string; readonly name: string; readonly parentId?: string; readonly createdAt: string; }
-export interface KnowledgeCollection { readonly collectionId: string; readonly tenantId: string; readonly knowledgeBaseId: string; readonly name: string; readonly documentIds: readonly string[]; readonly createdAt: string; }
-export interface KnowledgeVersion<T> { readonly versionId: string; readonly tenantId: string; readonly resourceId: string; readonly version: number; readonly snapshot: T; readonly createdAt: string; readonly createdBy: string; readonly reason: string; }
-export interface KnowledgeActivity { readonly activityId: string; readonly tenantId: string; readonly resourceId: string; readonly action: string; readonly actorId: string; readonly timestamp: string; readonly metadata: AIMetadata; }
-export interface KnowledgeManagerStatistics { readonly totalKnowledgeBases: number; readonly totalDocuments: number; readonly totalChunks: number; readonly totalSizeBytes: number; readonly readyDocuments: number; readonly failedDocuments: number; readonly pendingDocuments: number; readonly archivedDocuments: number; readonly documentsByType: Readonly<Record<string, number>>; readonly documentsByLanguage: Readonly<Record<string, number>>; readonly documentsByStatus: Readonly<Record<string, number>>; readonly chunksByKnowledgeBase: Readonly<Record<string, number>>; readonly recentIngestions: readonly KnowledgeActivity[]; readonly averageChunksPerDocument: number; readonly deduplicatedDocuments: number; readonly lastIndexedAt?: string; readonly errorCount: number; }
-export interface KnowledgeBaseQuery { readonly search?: string; readonly statuses?: readonly KnowledgeBaseStatus[]; readonly tags?: readonly string[]; readonly sort?: "name" | "createdAt" | "updatedAt" | "documentCount"; readonly direction?: "asc" | "desc"; readonly page?: number; readonly pageSize?: number; }
-export interface KnowledgePage<T> { readonly items: readonly T[]; readonly page: number; readonly pageSize: number; readonly total: number; readonly hasNext: boolean; readonly hasPrevious: boolean; }
-export interface BrowserFileInput { readonly name: string; readonly type: string; readonly size: number; arrayBuffer(): Promise<ArrayBuffer>; }
-export interface ManagedFileUpload { readonly file: BrowserFileInput; readonly title?: string; readonly language?: string; readonly tags?: readonly string[]; readonly replaceDocumentId?: string; }
-export interface ManagedIngestionResult { readonly document: ManagedDocument; readonly chunks: readonly KnowledgeChunk[]; readonly deduplicated: boolean; }
-export interface KnowledgeManagerDocumentProcessor { process(input: { readonly tenantId: string; readonly assistantId: string; readonly knowledgeBaseId: string; readonly documentId: string; readonly version: number; readonly upload: ManagedFileUpload; readonly actorId: string; readonly signal?: AbortSignal; readonly onProgress?: (status: ManagedDocumentStatus, completed: number) => void | Promise<void>; }): Promise<ManagedIngestionResult>; reindex(document: ManagedDocument, signal?: AbortSignal): Promise<readonly KnowledgeChunk[]>; }
+export type KnowledgeBaseStatus =
+  | "draft"
+  | "active"
+  | "indexing"
+  | "ready"
+  | "degraded"
+  | "failed"
+  | "archived";
+export type ManagedDocumentStatus =
+  | "selected"
+  | "validating"
+  | "queued"
+  | "loading"
+  | "parsing"
+  | "normalizing"
+  | "chunking"
+  | "embedding-pending"
+  | "indexing-pending"
+  | "ready"
+  | "partially-ready"
+  | "failed"
+  | "cancelled"
+  | "archived";
+export type KnowledgeManagerPermission =
+  | "knowledge:read"
+  | "knowledge:create"
+  | "knowledge:update"
+  | "knowledge:delete"
+  | "knowledge:archive"
+  | "knowledge:restore"
+  | "knowledge:associate"
+  | "documents:read"
+  | "documents:create"
+  | "documents:update"
+  | "documents:delete"
+  | "documents:reprocess"
+  | "ingestion:read"
+  | "ingestion:execute"
+  | "ingestion:cancel"
+  | "versions:read"
+  | "versions:restore";
+export interface KnowledgeManagerPrincipal {
+  readonly actorId: string;
+  readonly tenantId: string;
+  readonly permissions: readonly KnowledgeManagerPermission[];
+}
+export interface KnowledgeBaseConfiguration {
+  readonly retrievalEnabled: boolean;
+  readonly embeddingState: "not-configured" | "pending" | "available";
+  readonly chunkingStrategyId: string;
+}
+export interface ManagedKnowledgeBase {
+  readonly knowledgeBaseId: string;
+  readonly tenantId: string;
+  readonly name: string;
+  readonly slug: string;
+  readonly description: string;
+  readonly language: string;
+  readonly allowedLanguages: readonly string[];
+  readonly tags: readonly string[];
+  readonly status: KnowledgeBaseStatus;
+  readonly version: number;
+  readonly ownerId: string;
+  readonly createdBy: string;
+  readonly updatedBy: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly archivedAt?: string;
+  readonly assistantIds: readonly string[];
+  readonly documentCount: number;
+  readonly chunkCount: number;
+  readonly totalSizeBytes: number;
+  readonly lastIngestionAt?: string;
+  readonly lastIndexedAt?: string;
+  readonly configuration: KnowledgeBaseConfiguration;
+  readonly permissions: KnowledgePermissions;
+  readonly metadata: AIMetadata;
+}
+export interface ManagedDocumentError {
+  readonly code: string;
+  readonly message: string;
+  readonly stage: ManagedDocumentStatus;
+}
+export interface ManagedDocument {
+  readonly documentId: string;
+  readonly tenantId: string;
+  readonly knowledgeBaseId: string;
+  readonly assistantId: string;
+  readonly title: string;
+  readonly originalFileName: string;
+  readonly source: string;
+  readonly sourceKind: KnowledgeSourceKind;
+  readonly extension: string;
+  readonly mimeType: string;
+  readonly sizeBytes: number;
+  readonly language: string;
+  readonly checksum: string;
+  readonly version: number;
+  readonly status: ManagedDocumentStatus;
+  readonly folderId?: string;
+  readonly collectionIds: readonly string[];
+  readonly tags: readonly string[];
+  readonly permissions: KnowledgePermissions;
+  readonly metadata: AIMetadata;
+  readonly createdBy: string;
+  readonly updatedBy: string;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly processedAt?: string;
+  readonly indexedAt?: string;
+  readonly archivedAt?: string;
+  readonly chunkCount: number;
+  readonly error?: ManagedDocumentError;
+}
+export interface KnowledgeFolder {
+  readonly folderId: string;
+  readonly tenantId: string;
+  readonly knowledgeBaseId: string;
+  readonly name: string;
+  readonly parentId?: string;
+  readonly createdAt: string;
+}
+export interface KnowledgeCollection {
+  readonly collectionId: string;
+  readonly tenantId: string;
+  readonly knowledgeBaseId: string;
+  readonly name: string;
+  readonly documentIds: readonly string[];
+  readonly createdAt: string;
+}
+export interface KnowledgeVersion<T> {
+  readonly versionId: string;
+  readonly tenantId: string;
+  readonly resourceId: string;
+  readonly version: number;
+  readonly snapshot: T;
+  readonly createdAt: string;
+  readonly createdBy: string;
+  readonly reason: string;
+}
+export interface KnowledgeActivity {
+  readonly activityId: string;
+  readonly tenantId: string;
+  readonly resourceId: string;
+  readonly action: string;
+  readonly actorId: string;
+  readonly timestamp: string;
+  readonly metadata: AIMetadata;
+}
+export interface KnowledgeManagerStatistics {
+  readonly totalKnowledgeBases: number;
+  readonly totalDocuments: number;
+  readonly totalChunks: number;
+  readonly totalSizeBytes: number;
+  readonly readyDocuments: number;
+  readonly failedDocuments: number;
+  readonly pendingDocuments: number;
+  readonly archivedDocuments: number;
+  readonly documentsByType: Readonly<Record<string, number>>;
+  readonly documentsByLanguage: Readonly<Record<string, number>>;
+  readonly documentsByStatus: Readonly<Record<string, number>>;
+  readonly chunksByKnowledgeBase: Readonly<Record<string, number>>;
+  readonly recentIngestions: readonly KnowledgeActivity[];
+  readonly averageChunksPerDocument: number;
+  readonly deduplicatedDocuments: number;
+  readonly lastIndexedAt?: string;
+  readonly errorCount: number;
+}
+export interface KnowledgeBaseQuery {
+  readonly search?: string;
+  readonly statuses?: readonly KnowledgeBaseStatus[];
+  readonly tags?: readonly string[];
+  readonly sort?: "name" | "createdAt" | "updatedAt" | "documentCount";
+  readonly direction?: "asc" | "desc";
+  readonly page?: number;
+  readonly pageSize?: number;
+}
+export interface KnowledgePage<T> {
+  readonly items: readonly T[];
+  readonly page: number;
+  readonly pageSize: number;
+  readonly total: number;
+  readonly hasNext: boolean;
+  readonly hasPrevious: boolean;
+}
+export interface BrowserFileInput {
+  readonly name: string;
+  readonly type: string;
+  readonly size: number;
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+export interface ManagedFileUpload {
+  readonly file: BrowserFileInput;
+  readonly title?: string;
+  readonly language?: string;
+  readonly tags?: readonly string[];
+  readonly replaceDocumentId?: string;
+}
+export interface ManagedIngestionResult {
+  readonly document: ManagedDocument;
+  readonly chunks: readonly KnowledgeChunk[];
+  readonly deduplicated: boolean;
+}
+export interface ManagedDocumentPreview {
+  readonly documentId: string;
+  readonly title: string;
+  readonly mimeType: string;
+  readonly sizeBytes: number;
+  readonly status: ManagedDocumentStatus;
+  readonly checksum: string;
+  readonly version: number;
+  readonly metadata: AIMetadata;
+  readonly sections: readonly string[];
+  readonly pages: readonly number[];
+  readonly sheets: readonly string[];
+  readonly chunks: readonly Readonly<{
+    readonly id: string;
+    readonly text: string;
+    readonly index: number;
+  }>[];
+  readonly extractedText: string;
+  readonly error?: ManagedDocumentError;
+}
+export interface DocumentQuery {
+  readonly folderId?: string;
+  readonly collectionId?: string;
+  readonly tags?: readonly string[];
+}
+export interface KnowledgeManagerDocumentProcessor {
+  process(input: {
+    readonly tenantId: string;
+    readonly assistantId: string;
+    readonly knowledgeBaseId: string;
+    readonly documentId: string;
+    readonly version: number;
+    readonly upload: ManagedFileUpload;
+    readonly actorId: string;
+    readonly signal?: AbortSignal;
+    readonly onProgress?: (
+      status: ManagedDocumentStatus,
+      completed: number,
+    ) => void | Promise<void>;
+  }): Promise<ManagedIngestionResult>;
+  reprocess(
+    document: ManagedDocument,
+    actorId: string,
+    signal?: AbortSignal,
+    onProgress?: (
+      status: ManagedDocumentStatus,
+      completed: number,
+    ) => void | Promise<void>,
+  ): Promise<ManagedIngestionResult>;
+  reindex(
+    document: ManagedDocument,
+    signal?: AbortSignal,
+  ): Promise<readonly KnowledgeChunk[]>;
+  getChunks(document: ManagedDocument): Promise<readonly KnowledgeChunk[]>;
+}
