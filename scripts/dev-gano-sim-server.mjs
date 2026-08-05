@@ -2,6 +2,15 @@ import { createServer } from "node:http";
 import { Readable } from "node:stream";
 
 import { AIChatProviderRegistry } from "../packages/ai-core/dist/chat/registry.js";
+
+import {
+  InMemoryKnowledgeManagerRepository,
+  KnowledgeManagerService,
+} from "../packages/ai-core/dist/knowledge-manager/index.js";
+
+import {
+  BrowserBytesDocumentProcessor,
+} from "../apps/ingestion/dist/index.js";
 import { AssistantManager } from "../packages/ai-core/dist/runtime/manager.js";
 import {
   createToolRegistry,
@@ -13,6 +22,7 @@ import {
   DevelopmentGanoSimAffiliateProfileProvider,
   InMemoryAssistantRepository,
   createBackendApplication,
+  createGanoKnowledgeRuntime,
   createGanoSimAffiliateProfileTool,
 } from "../apps/functions/dist/index.js";
 
@@ -21,7 +31,34 @@ const PORT = 8788;
 
 const tenantId = "gano-sim";
 const assistantId = "gano-assistant";
+const knowledgePermissions = Object.freeze([
+  "knowledge:read",
+  "knowledge:create",
+  "knowledge:update",
+  "knowledge:delete",
+  "knowledge:archive",
+  "knowledge:restore",
+  "knowledge:associate",
 
+  "documents:read",
+  "documents:create",
+  "documents:update",
+  "documents:delete",
+  "documents:reprocess",
+
+  "ingestion:read",
+  "ingestion:execute",
+  "ingestion:cancel",
+
+  "versions:read",
+  "versions:restore",
+]);
+
+const knowledgePrincipal = Object.freeze({
+  actorId: "gano-sim-development-admin",
+  tenantId,
+  permissions: knowledgePermissions,
+});
 const allowedOrigins = new Set([
   "http://localhost:5173",
   "http://localhost:5174",
@@ -37,6 +74,65 @@ const allowedOrigins = new Set([
 
 const now = () => new Date().toISOString();
 
+const knowledgeRepository =
+  new InMemoryKnowledgeManagerRepository();
+
+const knowledgeProcessor =
+  new BrowserBytesDocumentProcessor();
+
+let knowledgeSequence = 0;
+
+const knowledgeManager =
+  new KnowledgeManagerService({
+    repository: knowledgeRepository,
+    processor: knowledgeProcessor,
+
+    generateId(prefix) {
+      knowledgeSequence += 1;
+
+      return `${prefix}-${knowledgeSequence}`;
+    },
+  });
+
+const publicKnowledgeBase =
+  await knowledgeManager.createBase(
+    knowledgePrincipal,
+    {
+      name: "gano-public",
+
+      description:
+        "Base pública autorizada de Gano Sim para invitados y afiliados.",
+
+      tags: Object.freeze([
+        "gano-public",
+        "public",
+        "gano-sim",
+      ]),
+    },
+  );
+
+await knowledgeManager.associateAssistant(
+  knowledgePrincipal,
+  publicKnowledgeBase.knowledgeBaseId,
+  assistantId,
+);
+
+const ganoKnowledgeRuntime =
+  createGanoKnowledgeRuntime({
+    repository: knowledgeRepository,
+    processor: knowledgeProcessor,
+
+    scope: {
+      tenantId,
+      assistantId,
+
+      knowledgeBaseId:
+        publicKnowledgeBase.knowledgeBaseId,
+    },
+
+    defaultLimit: 8,
+    defaultMinimumScore: 0.15,
+  });
 const descriptor = Object.freeze({
   id: assistantId,
   tenantId,
@@ -53,7 +149,7 @@ const descriptor = Object.freeze({
     chatFallback: false,
     embeddings: false,
     memory: false,
-    knowledge: false,
+    knowledge: true,
     tools: true,
     streaming: false,
   }),
@@ -78,6 +174,32 @@ const provider = Object.freeze({
   }),
 
   async generate(request) {
+    console.log("\n=== GANO ASSISTANT REQUEST ===");
+
+console.log(
+  "Request ID:",
+  request.requestId,
+);
+
+console.log(
+  "Messages:",
+  request.messages.map((message, index) => ({
+    index,
+    role: message.role,
+    contentType: message.contentType,
+    content: message.content,
+    metadata: message.metadata,
+  })),
+);
+
+console.log(
+  "Tools disponibles:",
+  request.tools?.map((tool) => tool.name) ?? [],
+);
+
+console.log(
+  "=== END REQUEST ===\n",
+);
     const createdAt = now();
     const last = request.messages.at(-1);
 
@@ -173,8 +295,12 @@ manager.create({
     }),
   }),
 
-  dependencies: Object.freeze({
-    chatProviders,
+dependencies: Object.freeze({
+  chatProviders,
+
+  knowledge:
+    ganoKnowledgeRuntime
+      .conversationRetriever,
   }),
 });
 
@@ -210,28 +336,36 @@ registry.register(
 const runtimeGateway =
   new AssistantManagerChatGateway(manager);
 
-const application = createBackendApplication({
-  chat: Object.freeze({
-    async generate(input) {
-      try {
-        return await runtimeGateway.generate(input);
-      } catch (error) {
-        console.error(
-          "Gano Sim runtime error",
-          error,
-        );
+const application = createBackendApplication(
+  {
+    chat: Object.freeze({
+      async generate(input) {
+        try {
+          return await runtimeGateway.generate(input);
+        } catch (error) {
+          console.error(
+            "Gano Sim runtime error",
+            error,
+          );
 
-        throw error;
-      }
-    },
-  }),
+          throw error;
+        }
+      },
+    }),
 
-  assistants,
+    assistants,
 
-  tools: createToolServices({
-    registry,
-  }),
-});
+    tools: createToolServices({
+      registry,
+    }),
+
+    knowledgeManager,
+  },
+  {
+    maximumBodyBytes:
+      60 * 1024 * 1024,
+  },
+);
 
 const getAllowedOrigin = (incoming) => {
   const origin = incoming.headers.origin;
@@ -460,6 +594,17 @@ server.listen(
   PORT,
   HOST,
   () => {
+    console.log(
+  `Knowledge Manager: ${publicKnowledgeBase.name}`,
+);
+
+console.log(
+  `Knowledge Base ID: ${publicKnowledgeBase.knowledgeBaseId}`,
+);
+
+console.log(
+  `Asistente asociado: ${assistantId}`,
+);
     console.log(
       `Gano Sim MVP Backend: http://${HOST}:${PORT}`,
     );

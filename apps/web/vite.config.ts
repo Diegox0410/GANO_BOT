@@ -55,7 +55,7 @@ export default defineConfig({
     strictPort: false,
     open: false,
     proxy: {
-      "/v1": "http://127.0.0.1:8787",
+      "/v1": "http://127.0.0.1:8788",
     },
   },
 

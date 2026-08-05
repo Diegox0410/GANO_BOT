@@ -7,3 +7,6 @@ export * from "./application.js";
 export * from "./admin/index.js";
 export * from "./knowledge-manager/index.js";
 export * from "./integrations/ganoSim.js";
+export * from "./integrations/ganoKnowledgePlan.js";
+export * from "./integrations/ganoKnowledgeCandidateSource.js";
+export * from "./integrations/ganoKnowledgeRuntime.js";

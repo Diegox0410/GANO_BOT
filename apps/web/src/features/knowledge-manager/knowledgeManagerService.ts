@@ -103,8 +103,9 @@ export class BackendKnowledgeManagerClient implements KnowledgeManagerClient {
   private readonly timeout: number;
   public constructor(config: BackendKnowledgeManagerClientConfig = {}) {
     this.apiUrl = (config.apiUrl ?? "").replace(/\/$/, "");
-    this.token =
-      config.token ?? "dev:development-tenant:developer-user:tenant-admin";
+   this.token =
+  config.token ??
+  "dev:gano-sim:admin-local:tenant-admin";
     this.fetchImplementation = config.fetchImplementation ?? fetch.bind(globalThis);
     this.timeout = config.timeoutMilliseconds ?? 30000;
   }

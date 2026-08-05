@@ -167,7 +167,7 @@ export function KnowledgeManagerApp({
     try {
       const value = await client.upload(
         activeBaseId,
-        "support-assistant",
+        "gano-assistant",
         files,
         next.signal,
       );
