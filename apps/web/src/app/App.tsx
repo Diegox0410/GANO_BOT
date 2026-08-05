@@ -11,6 +11,7 @@ import { EnterpriseAdminApp } from "../features/admin/EnterpriseAdminApp";
 import { InMemoryEnterpriseAdminService } from "../features/admin/enterpriseAdminService";
 import type { EnterprisePrincipal } from "../features/admin/enterpriseAdmin.types";
 import type { EnterpriseRole } from "../features/admin/enterpriseAdmin.types";
+import { KnowledgeManagerApp } from "../features/knowledge-manager/KnowledgeManagerApp";
 const PRINCIPAL: StudioPrincipal = Object.freeze({
   actorId: "developer-user",
   tenantId: "development-tenant",
@@ -83,6 +84,7 @@ export function App() {
     () => new InMemoryEnterpriseAdminService(ENTERPRISE_PRINCIPAL),
     [],
   );
+  if (location.pathname.startsWith("/admin/knowledge-manager")) return <KnowledgeManagerApp />;
   return location.pathname.startsWith("/admin") || location.pathname === "/" ? (
     <EnterpriseAdminApp service={adminService} />
   ) : (

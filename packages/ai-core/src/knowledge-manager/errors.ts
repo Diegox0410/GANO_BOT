@@ -1,0 +1,2 @@
+export type KnowledgeManagerErrorCode = "INVALID_INPUT" | "FORBIDDEN" | "NOT_FOUND" | "CONFLICT" | "TENANT_MISMATCH" | "UNSUPPORTED_FILE" | "FILE_TOO_LARGE" | "EMPTY_FILE" | "CANCELLED";
+export class KnowledgeManagerError extends Error { public override readonly name = "KnowledgeManagerError"; public constructor(public readonly code: KnowledgeManagerErrorCode, message: string, public override readonly cause?: unknown) { super(message, { cause }); } }

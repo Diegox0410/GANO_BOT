@@ -486,3 +486,4 @@ export * as KnowledgePlatform from "./knowledge/index.js";
 export * as RAGEngine from "./rag/index.js";
 export * as MemoryEngine from "./memory/index.js";
 export * as ToolsEngine from "./tools-engine/index.js";
+export * as KnowledgeManager from "./knowledge-manager/index.js";

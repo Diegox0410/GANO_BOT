@@ -11,7 +11,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
-    "test": "node dist/tests/ingestion.test.js",
+    "test": "node dist/tests/ingestion.test.js && node dist/tests/knowledge-manager.test.js",
     "start": "node dist/cli.js",
     "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true});fs.rmSync('tsconfig.tsbuildinfo',{force:true})\""
   },

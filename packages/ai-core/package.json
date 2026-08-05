@@ -20,6 +20,10 @@
       "types": "./dist/rag/index.d.ts",
       "import": "./dist/rag/index.js"
     },
+    "./knowledge-manager": {
+      "types": "./dist/knowledge-manager/index.d.ts",
+      "import": "./dist/knowledge-manager/index.js"
+    },
     "./memory-engine": {
       "types": "./dist/memory/index.d.ts",
       "import": "./dist/memory/index.js"

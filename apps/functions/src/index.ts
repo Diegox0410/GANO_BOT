@@ -5,3 +5,4 @@ export * from "./repositories.js";
 export * from "./services.js";
 export * from "./application.js";
 export * from "./admin/index.js";
+export * from "./knowledge-manager/index.js";

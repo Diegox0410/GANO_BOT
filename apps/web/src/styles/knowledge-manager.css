@@ -1,0 +1,238 @@
+.km-shell {
+  min-height: 100vh;
+  background: #07111f;
+  color: #eef6ff;
+  padding: clamp(1rem, 3vw, 2.5rem);
+  font-family: Inter, system-ui, sans-serif;
+}
+.km-header {
+  max-width: 1400px;
+  margin: auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 2rem;
+  padding: 2rem 0;
+}
+.km-header span {
+  color: #63e6be;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+}
+.km-header h1 {
+  font-size: clamp(2rem, 5vw, 4rem);
+  max-width: 800px;
+  line-height: 1;
+  margin: 0.6rem 0;
+  overflow-wrap: anywhere;
+}
+.km-header p {
+  color: #a9bbcf;
+}
+.km-header a,
+.km-primary,
+.km-create button {
+  background: #2f9eeb;
+  color: #06101e;
+  border: 0;
+  border-radius: 0.7rem;
+  padding: 0.8rem 1rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+.km-metrics,
+.km-grid {
+  max-width: 1400px;
+  margin: auto;
+  display: grid;
+  gap: 1rem;
+}
+.km-metrics {
+  grid-template-columns: repeat(4, 1fr);
+  margin-bottom: 1rem;
+}
+.km-metrics article,
+.km-panel {
+  background: #0e1c2e;
+  border: 1px solid #263c56;
+  border-radius: 1rem;
+  padding: 1.2rem;
+}
+.km-metrics strong {
+  font-size: 1.8rem;
+  display: block;
+}
+.km-metrics span,
+.km-panel p,
+.km-panel small {
+  color: #a9bbcf;
+}
+.km-grid {
+  grid-template-columns: 1.7fr 1fr;
+}
+.km-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+  margin-bottom: 1rem;
+}
+.km-title h2 {
+  margin: 0;
+}
+.km-title p {
+  margin-bottom: 0;
+}
+.km-title input,
+.km-create input {
+  background: #07111f;
+  color: #fff;
+  border: 1px solid #405a77;
+  border-radius: 0.7rem;
+  padding: 0.8rem;
+}
+.km-create {
+  display: flex;
+  gap: 0.7rem;
+  margin: 1rem 0;
+}
+.km-create input {
+  flex: 1;
+}
+.km-list {
+  display: grid;
+  gap: 0.7rem;
+}
+.km-list article {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  background: #13263d;
+  border-radius: 0.8rem;
+  padding: 1rem;
+}
+.km-list h3 {
+  margin: 0.45rem 0;
+}
+.km-status {
+  font-size: 0.7rem;
+  border-radius: 99px;
+  padding: 0.25rem 0.55rem;
+  background: #263c56;
+}
+.km-ready {
+  background: #087f5b;
+}
+.km-archived {
+  background: #495057;
+}
+.km-actions {
+  display: flex;
+  gap: 0.4rem;
+  align-items: start;
+}
+.km-actions button,
+.km-files button {
+  border: 1px solid #57728f;
+  background: #162a43;
+  color: #fff;
+  border-radius: 0.55rem;
+  padding: 0.55rem;
+}
+.km-actions .danger {
+  border-color: #ff8787;
+  color: #ffc9c9;
+}
+.km-empty {
+  display: grid;
+  gap: 0.3rem;
+  padding: 3rem;
+  text-align: center;
+  border: 1px dashed #405a77;
+  border-radius: 0.8rem;
+}
+.km-drop {
+  display: grid;
+  place-items: center;
+  text-align: center;
+  gap: 0.4rem;
+  padding: 2.5rem 1rem;
+  border: 2px dashed #405a77;
+  border-radius: 0.9rem;
+  cursor: pointer;
+}
+.km-drop.dragging,
+.km-drop:focus-within {
+  border-color: #63e6be;
+  background: #102b33;
+}
+.km-drop input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+}
+.km-files {
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.km-files li {
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  padding: 0.7rem;
+  background: #13263d;
+  border-radius: 0.6rem;
+}
+.km-files small {
+  display: block;
+}
+.km-primary {
+  width: 100%;
+  cursor: pointer;
+}
+.km-primary:disabled,
+.km-create button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.km-message {
+  border-left: 3px solid #63e6be;
+  padding-left: 0.7rem;
+}
+@media (max-width: 850px) {
+  .km-header,
+  .km-title {
+    display: grid;
+  }
+  .km-metrics {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .km-grid {
+    grid-template-columns: 1fr;
+  }
+  .km-create {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .km-create input,
+  .km-create button {
+    width: 100%;
+    min-width: 0;
+  }
+  .km-list article {
+    display: grid;
+  }
+  .km-header a {
+    width: max-content;
+  }
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+.km-drop:focus-within {
+  outline: 3px solid #ffd43b;
+  outline-offset: 3px;
+}
