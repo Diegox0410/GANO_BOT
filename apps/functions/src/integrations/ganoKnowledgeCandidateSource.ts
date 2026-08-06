@@ -304,9 +304,36 @@ export class GanoKnowledgeCandidateSource
           },
         ),
       );
+    
+    const candidates =
+      candidateGroups.flat();
+
+    console.log(
+      "[Gano Knowledge] Retrieval",
+      {
+        query: request.query,
+        documents:
+          documents.length,
+        eligibleDocuments:
+          eligibleDocuments.length,
+        candidates:
+          candidates.length,
+        scores:
+          candidates.map(
+            (candidate) => ({
+              score:
+                candidate.score,
+              reasons:
+                candidate.reasons,
+              chunkId:
+                candidate.chunk.id,
+            }),
+          ),
+      },
+    );
 
     return Object.freeze(
-      candidateGroups.flat(),
+      candidates,
     );
   }
 }

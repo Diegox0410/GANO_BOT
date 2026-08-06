@@ -81,9 +81,13 @@ export class AssistantManagerChatGateway implements BackendChatGateway {
         toolMessage === undefined
           ? input.messages
           : Object.freeze([...input.messages, toolMessage]),
-      useMemory: true,
-      useKnowledge: input.request.groundingMode !== "general-allowed",
-      signal: input.signal,
+      useMemory:
+  input.assistant.capabilities.memory,
+
+useKnowledge:
+  input.assistant.capabilities.knowledge,
+
+signal: input.signal,
       metadata: input.request.metadata,
     });
     return Object.freeze({

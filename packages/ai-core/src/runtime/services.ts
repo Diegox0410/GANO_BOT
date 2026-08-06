@@ -62,7 +62,8 @@ export function createRuntimeServices(input: CreateRuntimeServicesInput): Runtim
       language: definition.descriptor.locale,
       ...promptConfig?.identity,
     },
-    includeKnowledge: false,
+    includeKnowledge:
+  definition.descriptor.capabilities.knowledge,
   });
   const responseValidator = dependencies.responseValidator ?? createDefaultResponseValidator(configuration.validation);
   const llmClient: ConversationLLMClient = Object.freeze({

@@ -154,7 +154,66 @@ const descriptor = Object.freeze({
     streaming: false,
   }),
 });
+function extractKnowledgeFromPrompt(systemPrompt = "") {
+  const marker = "## Conocimiento recuperado";
+  const nextMarker = "## Reglas de respuesta";
 
+  const start = systemPrompt.indexOf(marker);
+
+  if (start < 0) {
+    return "";
+  }
+
+  const contentStart = start + marker.length;
+  const end = systemPrompt.indexOf(
+    nextMarker,
+    contentStart,
+  );
+
+  const section =
+    end >= 0
+      ? systemPrompt.slice(contentStart, end)
+      : systemPrompt.slice(contentStart);
+
+  const contentMarker = "Contenido:";
+  const contentIndex =
+    section.indexOf(contentMarker);
+
+  if (contentIndex < 0) {
+    return section.trim();
+  }
+
+  return section
+    .slice(contentIndex + contentMarker.length)
+    .trim();
+}
+
+function answerFromKnowledge({
+  question,
+  knowledge,
+}) {
+  const normalizedQuestion =
+    String(question ?? "").toLowerCase();
+
+  if (
+    /m[oó]dulos|invitado|acceso p[uú]blico/.test(
+      normalizedQuestion,
+    )
+  ) {
+    const match = knowledge.match(
+      /En modo invitado permite explorar\s+(.+?)(?:\.\s|\.$|\n)/i,
+    );
+
+    if (match?.[1]) {
+      return (
+        `Como invitado puedes explorar ${match[1]}. ` +
+        "Los datos personales, el rango, los volúmenes, las comisiones y la organización requieren una sesión autorizada."
+      );
+    }
+  }
+
+  return knowledge;
+}
 const provider = Object.freeze({
   name: "development",
 
@@ -174,69 +233,117 @@ const provider = Object.freeze({
   }),
 
   async generate(request) {
-    console.log("\n=== GANO ASSISTANT REQUEST ===");
+  console.log(
+    "\n=== GANO ASSISTANT REQUEST ===",
+  );
 
-console.log(
-  "Request ID:",
-  request.requestId,
-);
+  console.log(
+    "System prompt:",
+    request.systemPrompt,
+  );
 
-console.log(
-  "Messages:",
-  request.messages.map((message, index) => ({
-    index,
-    role: message.role,
-    contentType: message.contentType,
-    content: message.content,
-    metadata: message.metadata,
-  })),
-);
+  console.log(
+    "Request ID:",
+    request.requestId,
+  );
 
-console.log(
-  "Tools disponibles:",
-  request.tools?.map((tool) => tool.name) ?? [],
-);
+  console.log(
+    "Messages:",
+    request.messages.map(
+      (message, index) => ({
+        index,
+        role: message.role,
+        contentType:
+          message.contentType,
+        content: message.content,
+        metadata: message.metadata,
+      }),
+    ),
+  );
 
-console.log(
-  "=== END REQUEST ===\n",
-);
-    const createdAt = now();
-    const last = request.messages.at(-1);
+  console.log(
+    "Tools disponibles:",
+    request.tools?.map(
+      (tool) => tool.name,
+    ) ?? [],
+  );
 
-    const toolMessage = request.messages.findLast(
-      (message) => message.role === "tool",
+  console.log(
+    "=== END REQUEST ===\n",
+  );
+
+  const createdAt = now();
+
+  const last =
+    request.messages.at(-1);
+
+  const toolMessage =
+    request.messages.findLast(
+      (message) =>
+        message.role === "tool",
     );
 
-    const personal = /perfil|rango|progreso/i.test(
+  const personal =
+    /perfil|rango|progreso|volumen|pv|cv/i.test(
       last?.content ?? "",
     );
 
-    const tool =
-      toolMessage === undefined
-        ? undefined
-        : JSON.parse(toolMessage.content);
+  const tool =
+    toolMessage === undefined
+      ? undefined
+      : JSON.parse(
+          toolMessage.content,
+        );
 
-    const content =
-      tool?.authenticated === true
-        ? `${tool.profile.displayName}, tu rango actual es ${tool.profile.currentRank}, acumulas ${tool.profile.personalVolume} PV y tu siguiente objetivo es ${tool.profile.nextRank}.`
-        : tool?.authenticated === false
-          ? tool.message
-          : personal
-            ? "Consultando tu perfil autorizado…"
-            : "Puedo orientarte con información pública de Gano Sim. Inicia sesión para consultar datos personales.";
+  const knowledge =
+    extractKnowledgeFromPrompt(
+      request.systemPrompt,
+    );
 
-    const toolCalls =
-      personal && tool === undefined
-        ? Object.freeze([
-            {
-              id: `call-${Date.now()}`,
-              name: "gano.getCurrentAffiliateProfile",
-              arguments: Object.freeze({}),
-            },
-          ])
-        : Object.freeze([]);
+  let content;
 
-    const message = Object.freeze({
+  if (tool?.authenticated === true) {
+    content =
+      `${tool.profile.displayName}, ` +
+      `tu rango actual es ${tool.profile.currentRank}, ` +
+      `acumulas ${tool.profile.personalVolume} PV ` +
+      `y tu siguiente objetivo es ${tool.profile.nextRank}.`;
+  } else if (
+    tool?.authenticated === false
+  ) {
+    content = tool.message;
+  } else if (
+    personal &&
+    tool === undefined
+  ) {
+    content =
+      "Consultando tu perfil autorizado…";
+  } else if (knowledge.length > 0) {
+    content = answerFromKnowledge({
+      question:
+        last?.content ?? "",
+      knowledge,
+    });
+  } else {
+    content =
+      "No encontré información suficiente en la base de conocimiento para responder con precisión.";
+  }
+
+  const toolCalls =
+    personal && tool === undefined
+      ? Object.freeze([
+          {
+            id: `call-${Date.now()}`,
+            name:
+              "gano.getCurrentAffiliateProfile",
+            arguments:
+              Object.freeze({}),
+          },
+        ])
+      : Object.freeze([]);
+
+  const message =
+    Object.freeze({
       id: `message-${Date.now()}`,
       role: "assistant",
       content,
@@ -247,26 +354,29 @@ console.log(
     });
 
     return Object.freeze({
-      id: `response-${Date.now()}`,
-      requestId: request.requestId,
-      provider: "development",
-      model: "deterministic-mvp",
-      content,
-      message,
-      toolCalls,
-      finishReason:
-        toolCalls.length > 0
-          ? "tool_calls"
-          : "stop",
-      createdAt,
-    });
+    id: `response-${Date.now()}`,
+    requestId:
+      request.requestId,
+    provider: "development",
+    model: "deterministic-mvp",
+    content,
+    message,
+    toolCalls,
+    finishReason:
+      toolCalls.length > 0
+        ? "tool_calls"
+        : "stop",
+    createdAt,
+  });
   },
 });
 
-const chatProviders = new AIChatProviderRegistry({
-  providers: [provider],
-  defaultProviderId: provider.descriptor.id,
-});
+const chatProviders =
+  new AIChatProviderRegistry({
+    providers: [provider],
+    defaultProviderId:
+      provider.descriptor.id,
+  });
 
 const manager = new AssistantManager();
 

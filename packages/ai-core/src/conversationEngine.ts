@@ -1972,15 +1972,7 @@ export class DefaultConversationEngine {
     ) {
       return Object.freeze([]);
     }
-
-    if (
-      !intent
-        .requiresKnowledgeRetrieval
-    ) {
-      return Object.freeze([]);
-    }
-
-    try {
+  try {
       const result =
         await this.retriever.retrieve({
           requestId,
