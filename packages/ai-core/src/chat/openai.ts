@@ -18,11 +18,11 @@ import {
   BaseAIChatProvider,
   createAIChatAssistantMessage,
   throwIfAIChatAborted,
-} from "./base";
+} from "./base.js";
 
 import type {
   BaseAIChatProviderConfig,
-} from "./base";
+} from "./base.js";
 
 import type {
   AIChatFinishReason,
@@ -34,12 +34,12 @@ import type {
   AIChatToolCall,
   AIChatToolDefinition,
   AIChatUsage,
-} from "./types";
+} from "./types.js";
 
 import type {
   AIIdentifier,
   AIMetadata,
-} from "../types";
+} from "../types.js";
 
 /* ============================================================================
  * CONSTANTES

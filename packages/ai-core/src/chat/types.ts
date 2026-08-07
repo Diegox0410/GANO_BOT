@@ -36,7 +36,7 @@ import type {
   AIMetadata,
   AIToolCall,
   AIToolDefinition,
-} from "../types";
+} from "../types.js";
 
 /* ============================================================================
  * IDENTIFICADORES

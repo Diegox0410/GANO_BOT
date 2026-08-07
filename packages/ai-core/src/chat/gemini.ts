@@ -4,9 +4,9 @@ import {
   BaseAIChatProvider,
   createAIChatAssistantMessage,
   throwIfAIChatAborted,
-} from "./base";
+} from "./base.js";
 
-import type { BaseAIChatProviderConfig } from "./base";
+import type { BaseAIChatProviderConfig } from "./base.js";
 import type {
   AIChatFinishReason,
   AIChatGenerationResult,
@@ -15,8 +15,8 @@ import type {
   AIChatRequest,
   AIChatToolCall,
   AIChatUsage,
-} from "./types";
-import type { AIIdentifier, AIMetadata, AIUnknownRecord } from "../types";
+} from "./types.js";
+import type { AIIdentifier, AIMetadata, AIUnknownRecord } from "../types.js";
 
 export const DEFAULT_GEMINI_CHAT_BASE_URL =
   "https://generativelanguage.googleapis.com/v1beta";

@@ -32,13 +32,13 @@ import type {
   AIChatStream,
   AIChatToolCall,
   AIChatUsage,
-} from "./types";
+} from "./types.js";
 
 import type {
   AIIdentifier,
   AIISODateString,
   AIMetadata,
-} from "../types";
+} from "../types.js";
 
 /* ============================================================================
  * CONSTANTES

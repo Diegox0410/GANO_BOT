@@ -4,16 +4,16 @@ import {
   BaseAIChatProvider,
   isAIChatAbortError,
   throwIfAIChatAborted,
-} from "./base";
+} from "./base.js";
 
-import type { BaseAIChatProviderConfig } from "./base";
+import type { BaseAIChatProviderConfig } from "./base.js";
 import type {
   AIChatGenerationResult,
   AIChatProvider,
   AIChatProviderDescriptor,
   AIChatRequest,
-} from "./types";
-import type { AIMetadata } from "../types";
+} from "./types.js";
+import type { AIMetadata } from "../types.js";
 
 export interface AIChatFallbackFailure {
   readonly providerId: string;

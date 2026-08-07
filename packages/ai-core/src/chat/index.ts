@@ -1,7 +1,7 @@
 /** API pública de la capa conversacional. */
-export * from "./types";
-export * from "./base";
-export * from "./openai";
-export * from "./gemini";
-export * from "./fallback";
-export * from "./registry";
+export * from "./types.js";
+export * from "./base.js";
+export * from "./openai.js";
+export * from "./gemini.js";
+export * from "./fallback.js";
+export * from "./registry.js";

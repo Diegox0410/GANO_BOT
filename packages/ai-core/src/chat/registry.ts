@@ -1,10 +1,10 @@
 /** Registro mutable y aislado de proveedores conversacionales. */
-import { AIChatProviderError } from "./base";
+import { AIChatProviderError } from "./base.js";
 
 import type {
   AIChatProvider,
   AIChatProviderDescriptor,
-} from "./types";
+} from "./types.js";
 
 export interface RegisterAIChatProviderOptions {
   readonly replace?: boolean;
