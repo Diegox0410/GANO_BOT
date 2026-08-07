@@ -2,11 +2,6 @@
   "buildCommand": "npm run build",
   "outputDirectory": "apps/web/dist",
   "framework": null,
-  "functions": {
-    "api/**/*.mjs": {
-      "runtime": "nodejs22.x"
-    }
-  },
   "rewrites": [
     {
       "source": "/health",
