@@ -51,5 +51,8 @@
   },
   "allowScripts": {
     "esbuild": true
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.3"
   }
 }
