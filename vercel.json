@@ -5,10 +5,7 @@
   "framework": null,
   "functions": {
     "api/backend.mjs": {
-      "includeFiles": [
-        "node_modules/@napi-rs/canvas/**",
-        "node_modules/@napi-rs/canvas-linux-x64-gnu/**"
-      ]
+      "includeFiles": "{node_modules/@napi-rs/canvas/**,node_modules/@napi-rs/canvas-linux-x64-gnu/**}"
     }
   },
   "rewrites": [
