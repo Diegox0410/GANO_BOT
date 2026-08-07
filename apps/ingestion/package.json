@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@gano-bot/ai-core": "*",
+    "@napi-rs/canvas": "^1.0.3",
     "exceljs": "^4.4.0",
     "mammoth": "^1.10.0",
     "pdfjs-dist": "^5.4.149"
