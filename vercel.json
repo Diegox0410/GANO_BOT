@@ -1,7 +1,16 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build",
   "outputDirectory": "apps/web/dist",
   "framework": null,
+  "functions": {
+    "api/backend.mjs": {
+      "includeFiles": [
+        "node_modules/@napi-rs/canvas/**",
+        "node_modules/@napi-rs/canvas-linux-x64-gnu/**"
+      ]
+    }
+  },
   "rewrites": [
     {
       "source": "/health",
