@@ -1972,6 +1972,7 @@ export class DefaultConversationEngine {
     ) {
       return Object.freeze([]);
     }
+    
   try {
       const result =
         await this.retriever.retrieve({
