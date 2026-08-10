@@ -54,3 +54,17 @@ blob-report/
 
 # Local generated files
 *.local
+*.env.local
+*.env.*.local
+
+# Service account credentials
+*serviceAccount*.json
+*service-account*.json
+
+# Firebase Admin service account credentials
+*firebase-adminsdk*.json
+*serviceAccount*.json
+*service-account*.json
+
+# Local backups
+scripts/*.backup.mjs

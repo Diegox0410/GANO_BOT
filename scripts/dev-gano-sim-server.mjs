@@ -1,501 +1,92 @@
-import { createServer } from "node:http";
-import { Readable } from "node:stream";
-
-import { AIChatProviderRegistry } from "../packages/ai-core/dist/chat/registry.js";
+import {
+  createServer,
+} from "node:http";
 
 import {
-  InMemoryKnowledgeManagerRepository,
-  KnowledgeManagerService,
-} from "../packages/ai-core/dist/knowledge-manager/index.js";
+  Readable,
+} from "node:stream";
 
 import {
-  BrowserBytesDocumentProcessor,
-} from "../apps/ingestion/dist/index.js";
-import { AssistantManager } from "../packages/ai-core/dist/runtime/manager.js";
-import {
-  createToolRegistry,
-  createToolServices,
-} from "../packages/ai-core/dist/tools-engine/index.js";
+  getGanoHostedRuntime,
+} from "./gano-hosted-runtime.mjs";
 
-import {
-  AssistantManagerChatGateway,
-  DevelopmentGanoSimAffiliateProfileProvider,
-  InMemoryAssistantRepository,
-  createBackendApplication,
-  createGanoKnowledgeRuntime,
-  createGanoSimAffiliateProfileTool,
-} from "../apps/functions/dist/index.js";
+const HOST =
+  "127.0.0.1";
 
-const HOST = "127.0.0.1";
-const PORT = 8788;
+const PORT =
+  8788;
 
-const tenantId = "gano-sim";
-const assistantId = "gano-assistant";
-const knowledgePermissions = Object.freeze([
-  "knowledge:read",
-  "knowledge:create",
-  "knowledge:update",
-  "knowledge:delete",
-  "knowledge:archive",
-  "knowledge:restore",
-  "knowledge:associate",
+const allowedOrigins =
+  new Set([
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://localhost:5176",
+    "http://localhost:5177",
 
-  "documents:read",
-  "documents:create",
-  "documents:update",
-  "documents:delete",
-  "documents:reprocess",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+    "http://127.0.0.1:5175",
+    "http://127.0.0.1:5176",
+    "http://127.0.0.1:5177",
+  ]);
 
-  "ingestion:read",
-  "ingestion:execute",
-  "ingestion:cancel",
-
-  "versions:read",
-  "versions:restore",
-]);
-
-const knowledgePrincipal = Object.freeze({
-  actorId: "gano-sim-development-admin",
-  tenantId,
-  permissions: knowledgePermissions,
-});
-const allowedOrigins = new Set([
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "http://localhost:5175",
-  "http://localhost:5176",
-  "http://localhost:5177",
-  "http://127.0.0.1:5173",
-  "http://127.0.0.1:5174",
-  "http://127.0.0.1:5175",
-  "http://127.0.0.1:5176",
-  "http://127.0.0.1:5177",
-]);
-
-const now = () => new Date().toISOString();
-
-const knowledgeRepository =
-  new InMemoryKnowledgeManagerRepository();
-
-const knowledgeProcessor =
-  new BrowserBytesDocumentProcessor();
-
-let knowledgeSequence = 0;
-
-const knowledgeManager =
-  new KnowledgeManagerService({
-    repository: knowledgeRepository,
-    processor: knowledgeProcessor,
-
-    generateId(prefix) {
-      knowledgeSequence += 1;
-
-      return `${prefix}-${knowledgeSequence}`;
-    },
-  });
-
-const publicKnowledgeBase =
-  await knowledgeManager.createBase(
-    knowledgePrincipal,
-    {
-      name: "gano-public",
-
-      description:
-        "Base pública autorizada de Gano Sim para invitados y afiliados.",
-
-      tags: Object.freeze([
-        "gano-public",
-        "public",
-        "gano-sim",
-      ]),
-    },
-  );
-
-await knowledgeManager.associateAssistant(
-  knowledgePrincipal,
-  publicKnowledgeBase.knowledgeBaseId,
-  assistantId,
-);
-
-const ganoKnowledgeRuntime =
-  createGanoKnowledgeRuntime({
-    repository: knowledgeRepository,
-    processor: knowledgeProcessor,
-
-    scope: {
-      tenantId,
-      assistantId,
-
-      knowledgeBaseId:
-        publicKnowledgeBase.knowledgeBaseId,
-    },
-
-    defaultLimit: 8,
-    defaultMinimumScore: 0.15,
-  });
-const descriptor = Object.freeze({
-  id: assistantId,
-  tenantId,
-  name: "Asistente Gano Sim",
-  version: "1.0.0",
-  locale: "es",
-  enabled: true,
-  capabilities: Object.freeze({
-    conversation: true,
-    intentDetection: true,
-    contextBuilding: true,
-    promptBuilding: true,
-    responseValidation: true,
-    chatFallback: false,
-    embeddings: false,
-    memory: false,
-    knowledge: true,
-    tools: true,
-    streaming: false,
-  }),
-});
-function extractKnowledgeFromPrompt(systemPrompt = "") {
-  const marker = "## Conocimiento recuperado";
-  const nextMarker = "## Reglas de respuesta";
-
-  const start = systemPrompt.indexOf(marker);
-
-  if (start < 0) {
-    return "";
-  }
-
-  const contentStart = start + marker.length;
-  const end = systemPrompt.indexOf(
-    nextMarker,
-    contentStart,
-  );
-
-  const section =
-    end >= 0
-      ? systemPrompt.slice(contentStart, end)
-      : systemPrompt.slice(contentStart);
-
-  const contentMarker = "Contenido:";
-  const contentIndex =
-    section.indexOf(contentMarker);
-
-  if (contentIndex < 0) {
-    return section.trim();
-  }
-
-  return section
-    .slice(contentIndex + contentMarker.length)
-    .trim();
-}
-
-function answerFromKnowledge({
-  question,
-  knowledge,
-}) {
-  const normalizedQuestion =
-    String(question ?? "").toLowerCase();
-
-  if (
-    /m[oó]dulos|invitado|acceso p[uú]blico/.test(
-      normalizedQuestion,
-    )
-  ) {
-    const match = knowledge.match(
-      /En modo invitado permite explorar\s+(.+?)(?:\.\s|\.$|\n)/i,
-    );
-
-    if (match?.[1]) {
-      return (
-        `Como invitado puedes explorar ${match[1]}. ` +
-        "Los datos personales, el rango, los volúmenes, las comisiones y la organización requieren una sesión autorizada."
+function appendHeader(
+  headers,
+  name,
+  value,
+) {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      headers.append(
+        name,
+        item,
       );
     }
+
+    return;
   }
-
-  return knowledge;
-}
-const provider = Object.freeze({
-  name: "development",
-
-  descriptor: Object.freeze({
-    id: "gano-sim-development",
-    name: "development",
-    displayName: "Gano Sim Development Provider",
-    defaultModel: "deterministic-mvp",
-    enabled: true,
-    capabilities: Object.freeze({
-      supportsStreaming: false,
-      supportsTools: true,
-      supportsJson: false,
-      supportsMultimodal: false,
-      supportsSeed: true,
-    }),
-  }),
-
-  async generate(request) {
-  console.log(
-    "\n=== GANO ASSISTANT REQUEST ===",
-  );
-
-  console.log(
-    "System prompt:",
-    request.systemPrompt,
-  );
-
-  console.log(
-    "Request ID:",
-    request.requestId,
-  );
-
-  console.log(
-    "Messages:",
-    request.messages.map(
-      (message, index) => ({
-        index,
-        role: message.role,
-        contentType:
-          message.contentType,
-        content: message.content,
-        metadata: message.metadata,
-      }),
-    ),
-  );
-
-  console.log(
-    "Tools disponibles:",
-    request.tools?.map(
-      (tool) => tool.name,
-    ) ?? [],
-  );
-
-  console.log(
-    "=== END REQUEST ===\n",
-  );
-
-  const createdAt = now();
-
-  const last =
-    request.messages.at(-1);
-
-  const toolMessage =
-    request.messages.findLast(
-      (message) =>
-        message.role === "tool",
-    );
-
-  const personal =
-    /perfil|rango|progreso|volumen|pv|cv/i.test(
-      last?.content ?? "",
-    );
-
-  const tool =
-    toolMessage === undefined
-      ? undefined
-      : JSON.parse(
-          toolMessage.content,
-        );
-
-  const knowledge =
-    extractKnowledgeFromPrompt(
-      request.systemPrompt,
-    );
-
-  let content;
-
-  if (tool?.authenticated === true) {
-    content =
-      `${tool.profile.displayName}, ` +
-      `tu rango actual es ${tool.profile.currentRank}, ` +
-      `acumulas ${tool.profile.personalVolume} PV ` +
-      `y tu siguiente objetivo es ${tool.profile.nextRank}.`;
-  } else if (
-    tool?.authenticated === false
-  ) {
-    content = tool.message;
-  } else if (
-    personal &&
-    tool === undefined
-  ) {
-    content =
-      "Consultando tu perfil autorizado…";
-  } else if (knowledge.length > 0) {
-    content = answerFromKnowledge({
-      question:
-        last?.content ?? "",
-      knowledge,
-    });
-  } else {
-    content =
-      "No encontré información suficiente en la base de conocimiento para responder con precisión.";
-  }
-
-  const toolCalls =
-    personal && tool === undefined
-      ? Object.freeze([
-          {
-            id: `call-${Date.now()}`,
-            name:
-              "gano.getCurrentAffiliateProfile",
-            arguments:
-              Object.freeze({}),
-          },
-        ])
-      : Object.freeze([]);
-
-  const message =
-    Object.freeze({
-      id: `message-${Date.now()}`,
-      role: "assistant",
-      content,
-      contentType: "text",
-      status: "completed",
-      createdAt,
-      updatedAt: createdAt,
-    });
-
-    return Object.freeze({
-    id: `response-${Date.now()}`,
-    requestId:
-      request.requestId,
-    provider: "development",
-    model: "deterministic-mvp",
-    content,
-    message,
-    toolCalls,
-    finishReason:
-      toolCalls.length > 0
-        ? "tool_calls"
-        : "stop",
-    createdAt,
-  });
-  },
-});
-
-const chatProviders =
-  new AIChatProviderRegistry({
-    providers: [provider],
-    defaultProviderId:
-      provider.descriptor.id,
-  });
-
-const manager = new AssistantManager();
-
-manager.create({
-  definition: Object.freeze({
-    descriptor,
-
-    configuration: Object.freeze({
-      primaryChatProviderId:
-        provider.descriptor.id,
-
-      tools: Object.freeze([
-        {
-          name: "gano.getCurrentAffiliateProfile",
-          description:
-            "Obtiene el perfil del afiliado autenticado.",
-          parameters: Object.freeze({
-            type: "object",
-            additionalProperties: false,
-            properties: Object.freeze({}),
-          }),
-        },
-      ]),
-
-      persistMessages: false,
-    }),
-  }),
-
-dependencies: Object.freeze({
-  chatProviders,
-
-  knowledge:
-    ganoKnowledgeRuntime
-      .conversationRetriever,
-  }),
-});
-
-const assistants =
-  new InMemoryAssistantRepository();
-
-assistants.register(descriptor);
-
-const profileProvider =
-  new DevelopmentGanoSimAffiliateProfileProvider(
-    Object.freeze({
-      [`${tenantId}:affiliate-demo`]:
-        Object.freeze({
-          affiliateId: "affiliate-demo",
-          displayName: "Afiliada Demo",
-          currentRank: "Bronce",
-          personalVolume: 860,
-          nextRank: "Plata",
-        }),
-    }),
-  );
-
-const registry = createToolRegistry();
-
-registry.register(
-  createGanoSimAffiliateProfileTool(
-    profileProvider,
-    tenantId,
-    assistantId,
-  ),
-);
-
-const runtimeGateway =
-  new AssistantManagerChatGateway(manager);
-
-const application = createBackendApplication(
-  {
-    chat: Object.freeze({
-      async generate(input) {
-        try {
-          return await runtimeGateway.generate(input);
-        } catch (error) {
-          console.error(
-            "Gano Sim runtime error",
-            error,
-          );
-
-          throw error;
-        }
-      },
-    }),
-
-    assistants,
-
-    tools: createToolServices({
-      registry,
-    }),
-
-    knowledgeManager,
-  },
-  {
-    maximumBodyBytes:
-      60 * 1024 * 1024,
-  },
-);
-
-const getAllowedOrigin = (incoming) => {
-  const origin = incoming.headers.origin;
 
   if (
-    typeof origin === "string" &&
-    allowedOrigins.has(origin)
+    value !== undefined
+  ) {
+    headers.set(
+      name,
+      String(value),
+    );
+  }
+}
+
+function getAllowedOrigin(
+  incoming,
+) {
+  const origin =
+    incoming.headers.origin;
+
+  if (
+    typeof origin ===
+      "string" &&
+    allowedOrigins.has(
+      origin,
+    )
   ) {
     return origin;
   }
 
   return null;
-};
+}
 
-const applyCorsHeaders = (
+function applyCors(
+  incoming,
   outgoing,
-  origin,
-) => {
+) {
+  const origin =
+    getAllowedOrigin(
+      incoming,
+    );
+
   if (!origin) {
-    return;
+    return false;
   }
 
   outgoing.setHeader(
@@ -538,128 +129,104 @@ const applyCorsHeaders = (
     "Vary",
     "Origin",
   );
-};
 
-const server = createServer(
-  async (incoming, outgoing) => {
-    const origin =
-      getAllowedOrigin(incoming);
+  return true;
+}
 
-    applyCorsHeaders(
+async function readNodeBody(
+  request,
+) {
+  const chunks =
+    [];
+
+  for await (
+    const chunk
+    of request
+  ) {
+    chunks.push(
+      Buffer.isBuffer(
+        chunk,
+      )
+        ? chunk
+        : Buffer.from(
+            chunk,
+          ),
+    );
+  }
+
+  if (
+    chunks.length === 0
+  ) {
+    return undefined;
+  }
+
+  return Buffer.concat(
+    chunks,
+  );
+}
+
+function buildHeaders(
+  incoming,
+) {
+  const headers =
+    new Headers();
+
+  for (
+    const [
+      name,
+      value,
+    ] of Object.entries(
+      incoming.headers,
+    )
+  ) {
+    appendHeader(
+      headers,
+      name,
+      value,
+    );
+  }
+
+  return headers;
+}
+
+function writeHeaders(
+  response,
+  backendResponse,
+) {
+  backendResponse.headers.forEach(
+    (
+      value,
+      name,
+    ) => {
+      response.setHeader(
+        name,
+        value,
+      );
+    },
+  );
+}
+
+async function handleRequest(
+  incoming,
+  outgoing,
+) {
+  const corsAllowed =
+    applyCors(
+      incoming,
       outgoing,
-      origin,
     );
 
+  if (
+    incoming.method ===
+      "OPTIONS"
+  ) {
     if (
-      incoming.method === "OPTIONS"
+      incoming.headers
+        .origin &&
+      !corsAllowed
     ) {
-      if (
-        incoming.headers.origin &&
-        !origin
-      ) {
-        outgoing.statusCode = 403;
-        outgoing.setHeader(
-          "Content-Type",
-          "application/json; charset=utf-8",
-        );
-
-        outgoing.end(
-          JSON.stringify({
-            success: false,
-            error: {
-              code: "CORS_ORIGIN_DENIED",
-              message:
-                "El origen de la solicitud no está autorizado.",
-            },
-          }),
-        );
-
-        return;
-      }
-
-      outgoing.statusCode = 204;
-      outgoing.end();
-
-      return;
-    }
-
-    try {
-      const headers = new Headers();
-
-      for (
-        const [name, value] of Object.entries(
-          incoming.headers,
-        )
-      ) {
-        if (Array.isArray(value)) {
-          for (const item of value) {
-            headers.append(name, item);
-          }
-        } else if (value !== undefined) {
-          headers.set(name, value);
-        }
-      }
-
-      const method =
-        incoming.method ?? "GET";
-
-      const request = new Request(
-        `http://${HOST}:${PORT}${incoming.url ?? "/"}`,
-        {
-          method,
-          headers,
-
-          ...(method === "GET" ||
-          method === "HEAD"
-            ? {}
-            : {
-                body: Readable.toWeb(
-                  incoming,
-                ),
-                duplex: "half",
-              }),
-        },
-      );
-
-      const response =
-        await application.handle(
-          request,
-        );
-
       outgoing.statusCode =
-        response.status;
-
-      response.headers.forEach(
-        (value, name) => {
-          outgoing.setHeader(
-            name,
-            value,
-          );
-        },
-      );
-
-      applyCorsHeaders(
-        outgoing,
-        origin,
-      );
-
-      const body = Buffer.from(
-        await response.arrayBuffer(),
-      );
-
-      outgoing.end(body);
-    } catch (error) {
-      console.error(
-        "Gano Sim development server error",
-        error,
-      );
-
-      outgoing.statusCode = 500;
-
-      applyCorsHeaders(
-        outgoing,
-        origin,
-      );
+        403;
 
       outgoing.setHeader(
         "Content-Type",
@@ -669,62 +236,187 @@ const server = createServer(
       outgoing.end(
         JSON.stringify({
           success: false,
+
           error: {
-            code: "DEVELOPMENT_SERVER_ERROR",
+            code:
+              "CORS_ORIGIN_DENIED",
+
             message:
-              "El servidor local encontró un error interno.",
+              "El origen de la solicitud no está autorizado.",
           },
         }),
       );
+
+      return;
     }
-  },
-);
 
-server.on("error", (error) => {
-  if (
-    error?.code === "EADDRINUSE"
-  ) {
-    console.error(
-      `El puerto ${PORT} ya está ocupado. Finaliza el proceso anterior antes de iniciar otro servidor.`,
-    );
+    outgoing.statusCode =
+      204;
 
-    process.exitCode = 1;
+    outgoing.end();
+
     return;
   }
 
-  console.error(
-    "No fue posible iniciar el servidor local:",
-    error,
+  try {
+    const runtime =
+      await getGanoHostedRuntime();
+
+    const headers =
+      buildHeaders(
+        incoming,
+      );
+
+    const method =
+      incoming.method ??
+      "GET";
+
+    const url =
+      new URL(
+        `http://${HOST}:${PORT}${incoming.url ?? "/"}`,
+      );
+
+    const body =
+      method === "GET" ||
+      method === "HEAD"
+        ? undefined
+        : await readNodeBody(
+            incoming,
+          );
+
+    const webRequest =
+      new Request(
+        url,
+        {
+          method,
+          headers,
+
+          ...(
+            body ===
+            undefined
+              ? {}
+              : {
+                  body,
+                }
+          ),
+        },
+      );
+
+    const backendResponse =
+      await runtime
+        .application
+        .handle(
+          webRequest,
+        );
+
+    outgoing.statusCode =
+      backendResponse.status;
+
+    writeHeaders(
+      outgoing,
+      backendResponse,
+    );
+
+    applyCors(
+      incoming,
+      outgoing,
+    );
+
+    const buffer =
+      Buffer.from(
+        await backendResponse
+          .arrayBuffer(),
+      );
+
+    outgoing.end(
+      buffer,
+    );
+  } catch (error) {
+    console.error(
+      "[GANO_BOT local]",
+      error,
+    );
+
+    outgoing.statusCode =
+      500;
+
+    outgoing.setHeader(
+      "Content-Type",
+      "application/json; charset=utf-8",
+    );
+
+    outgoing.end(
+      JSON.stringify({
+        success: false,
+
+        error: {
+          code:
+            "LOCAL_RUNTIME_ERROR",
+
+          message:
+            error instanceof Error
+              ? error.message
+              : "Error interno de GANO_BOT.",
+        },
+      }),
+    );
+  }
+}
+
+const server =
+  createServer(
+    (
+      incoming,
+      outgoing,
+    ) => {
+      void handleRequest(
+        incoming,
+        outgoing,
+      );
+    },
   );
 
-  process.exitCode = 1;
-});
+server.on(
+  "error",
+  (error) => {
+    if (
+      error &&
+      typeof error ===
+        "object" &&
+      "code" in error &&
+      error.code ===
+        "EADDRINUSE"
+    ) {
+      console.error(
+        `El puerto ${PORT} ya está ocupado. Finaliza el proceso anterior antes de iniciar otro servidor.`,
+      );
+
+      process.exit(1);
+    }
+
+    console.error(
+      "[GANO_BOT local]",
+      error,
+    );
+
+    process.exit(1);
+  },
+);
 
 server.listen(
   PORT,
   HOST,
   () => {
     console.log(
-  `Knowledge Manager: ${publicKnowledgeBase.name}`,
-);
-
-console.log(
-  `Knowledge Base ID: ${publicKnowledgeBase.knowledgeBaseId}`,
-);
-
-console.log(
-  `Asistente asociado: ${assistantId}`,
-);
-    console.log(
       `Gano Sim MVP Backend: http://${HOST}:${PORT}`,
     );
 
     console.log(
-      "Orígenes de desarrollo autorizados:",
+      "Runtime: Firestore persistent",
     );
 
-    for (const origin of allowedOrigins) {
-      console.log(`- ${origin}`);
-    }
+    console.log(
+      "Knowledge Base: gano-public",
+    );
   },
 );

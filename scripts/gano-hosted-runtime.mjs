@@ -1,10 +1,16 @@
 import { AIChatProviderRegistry } from "../packages/ai-core/dist/chat/registry.js";
 
 import {
-  InMemoryKnowledgeManagerRepository,
   KnowledgeManagerService,
 } from "../packages/ai-core/dist/knowledge-manager/index.js";
 
+import {
+  FirestoreKnowledgeManagerRepository,
+} from "../apps/functions/dist/integrations/firestoreKnowledgeManagerRepository.js";
+
+import {
+  getGanoAdminFirestore,
+} from "../apps/functions/dist/integrations/firebaseAdmin.js";
 import {
   BrowserBytesDocumentProcessor,
 } from "../apps/ingestion/dist/index.js";
@@ -26,6 +32,10 @@ import {
   createGanoKnowledgeRuntime,
   createGanoSimAffiliateProfileTool,
 } from "../apps/functions/dist/index.js";
+
+import {
+  FirestoreKnowledgeDocumentProcessor,
+} from "../apps/functions/dist/integrations/firestoreKnowledgeDocumentProcessor.js";
 
 const tenantId = "gano-sim";
 const assistantId = "gano-assistant";
@@ -123,36 +133,208 @@ function answerFromKnowledge({
 }) {
   const normalizedQuestion =
     String(question ?? "")
-      .toLowerCase();
+      .normalize("NFD")
+      .replace(
+        /[\u0300-\u036f]/g,
+        "",
+      )
+      .toLowerCase()
+      .trim();
+
+  const normalizedKnowledge =
+    String(knowledge ?? "")
+      .trim();
+
+  if (!normalizedKnowledge) {
+    return (
+      "No encontré información suficiente " +
+      "en la base de conocimiento para responder con precisión."
+    );
+  }
+
+  /*
+   * =========================================================
+   * RESPUESTAS ESPECÍFICAS
+   * =========================================================
+   *
+   * El proveedor actual es determinista.
+   * Todavía no estamos delegando la redacción final
+   * a un LLM externo.
+   *
+   * Por eso convertimos el contexto RAG en una respuesta
+   * conversacional limpia, en lugar de devolver el bloque
+   * técnico completo.
+   */
 
   if (
-    /m[oó]dulos|invitado|acceso p[uú]blico/.test(
+    /que es gano itouch|que es gano|gano itouch/.test(
       normalizedQuestion,
     )
   ) {
-    const match =
-      knowledge.match(
-        /En modo invitado permite explorar\s+(.+?)(?:\.\s|\.$|\n)/i,
-      );
-
-    if (match?.[1]) {
-      return (
-        `Como invitado puedes explorar ${match[1]}. ` +
-        "Los datos personales, el rango, los volúmenes, " +
-        "las comisiones y la organización requieren una sesión autorizada."
-      );
-    }
+    return (
+      "Gano iTouch es una empresa de comercialización y distribución " +
+      "de productos vinculados con bienestar, nutrición y consumo. " +
+      "En Ecuador opera mediante una estructura de distribución independiente " +
+      "y utiliza un modelo de venta directa y mercadeo en red. " +
+      "Los distribuidores pueden comercializar productos y, según los requisitos " +
+      "del plan vigente, participar en mecanismos de compensación, desarrollo " +
+      "de organización y calificación por rangos."
+    );
   }
 
-  return knowledge;
+  if (
+    /como funciona el negocio|modelo de negocio|como funciona gano/.test(
+      normalizedQuestion,
+    )
+  ) {
+    return (
+      "El modelo de Gano iTouch funciona mediante venta directa y mercadeo en red. " +
+      "Los participantes pueden comprar o comercializar productos y desarrollar " +
+      "una organización de distribuidores. Dependiendo de su modalidad, actividad, " +
+      "volumen y cumplimiento de requisitos, pueden participar en componentes del " +
+      "plan de compensación como binario, GEN5, regalías y calificación por rangos. " +
+      "Las reglas exactas deben consultarse en el plan de compensación vigente."
+    );
+  }
+
+  if (
+    /modulos|invitado|acceso publico/.test(
+      normalizedQuestion,
+    )
+  ) {
+    return (
+      "Como invitado puedes consultar información general y educativa sobre " +
+      "Gano iTouch, su historia, productos, conceptos del negocio y otros contenidos " +
+      "públicos autorizados. Los datos personales, rangos, volúmenes, comisiones " +
+      "y organización requieren una sesión autorizada."
+    );
+  }
+
+  /*
+   * =========================================================
+   * FALLBACK RAG LIMPIO
+   * =========================================================
+   *
+   * Eliminamos metadatos internos del prompt recuperado:
+   * IDs, scores, posiciones y encabezados técnicos.
+   */
+
+  const cleanedKnowledge =
+    normalizedKnowledge
+      .replace(
+        /^### Documento \d+\s*$/gim,
+        "",
+      )
+      .replace(
+        /^ID de fragmento:.*$/gim,
+        "",
+      )
+      .replace(
+        /^ID de documento:.*$/gim,
+        "",
+      )
+      .replace(
+        /^Tipo:.*$/gim,
+        "",
+      )
+      .replace(
+        /^Puntuación de relevancia:.*$/gim,
+        "",
+      )
+      .replace(
+        /^Posición:.*$/gim,
+        "",
+      )
+      .replace(
+        /^Página:.*$/gim,
+        "",
+      )
+      .replace(
+        /^Sección:.*$/gim,
+        "",
+      )
+      .replace(
+        /^URI:.*$/gim,
+        "",
+      )
+      .replace(
+        /^Contenido:\s*$/gim,
+        "",
+      )
+      .replace(
+        /\n{3,}/g,
+        "\n\n",
+      )
+      .trim();
+
+  /*
+   * Evitamos enviar miles de caracteres al usuario
+   * mientras todavía usamos el provider determinista.
+   */
+
+  const maximumCharacters =
+    1800;
+
+  if (
+    cleanedKnowledge.length <=
+    maximumCharacters
+  ) {
+    return cleanedKnowledge;
+  }
+
+  return (
+    cleanedKnowledge
+      .slice(
+        0,
+        maximumCharacters,
+      )
+      .trimEnd() +
+    "\n\nPuedes pedirme que profundice en alguno de estos puntos."
+  );
 }
 
 async function createHostedRuntime() {
-  const knowledgeRepository =
-    new InMemoryKnowledgeManagerRepository();
+  /*
+   * =========================================================
+   * KNOWLEDGE MANAGER — PERSISTENCIA FIRESTORE
+   * =========================================================
+   *
+   * La base de conocimiento ya no vive únicamente durante
+   * la ejecución de la función serverless.
+   *
+   * Firestore se convierte en la fuente persistente para:
+   *
+   * - Knowledge Bases
+   * - Documents
+   * - Folders
+   * - Collections
+   * - Versions
+   * - Activity
+   */
 
-  const knowledgeProcessor =
-    new BrowserBytesDocumentProcessor();
+  const firestore =
+    getGanoAdminFirestore();
+
+  const knowledgeRepository =
+    new FirestoreKnowledgeManagerRepository(
+      firestore,
+    );
+
+  const browserKnowledgeProcessor =
+  new BrowserBytesDocumentProcessor();
+
+const knowledgeProcessor =
+  new FirestoreKnowledgeDocumentProcessor(
+    firestore,
+    browserKnowledgeProcessor,
+  );
+  /*
+   * El generador sigue siendo necesario para los recursos
+   * creados por KnowledgeManagerService.
+   *
+   * Incorporamos timestamp + secuencia para reducir el riesgo
+   * de colisiones entre inicializaciones serverless.
+   */
 
   let knowledgeSequence = 0;
 
@@ -167,34 +349,135 @@ async function createHostedRuntime() {
       generateId(prefix) {
         knowledgeSequence += 1;
 
-        return `${prefix}-${knowledgeSequence}`;
+        return (
+          `${prefix}-` +
+          `${Date.now()}-` +
+          `${knowledgeSequence}`
+        );
       },
     });
 
-  const publicKnowledgeBase =
-    await knowledgeManager.createBase(
-      knowledgePrincipal,
-      {
-        name: "gano-public",
+  /*
+   * =========================================================
+   * BASE PÚBLICA GANO SIM
+   * =========================================================
+   *
+   * Antes se creaba una nueva base cada vez que arrancaba
+   * el runtime.
+   *
+   * Ahora:
+   *
+   * 1. Consultamos Firestore.
+   * 2. Buscamos "gano-public".
+   * 3. Si existe, reutilizamos la misma.
+   * 4. Si no existe, la creamos.
+   *
+   * Esto hace que la inicialización sea persistente.
+   */
 
-        description:
-          "Base pública autorizada de Gano Sim para invitados y afiliados.",
-
-        tags: Object.freeze([
-          "gano-public",
-          "public",
-          "gano-sim",
-        ]),
-      },
+  const existingKnowledgeBases =
+    await knowledgeRepository.listBases(
+      tenantId,
     );
 
-  await knowledgeManager
-    .associateAssistant(
-      knowledgePrincipal,
+  let publicKnowledgeBase =
+    existingKnowledgeBases.find(
+      (base) =>
+        base.name ===
+        "gano-public",
+    );
+
+  if (!publicKnowledgeBase) {
+    publicKnowledgeBase =
+      await knowledgeManager.createBase(
+        knowledgePrincipal,
+        {
+          name:
+            "gano-public",
+
+          description:
+            "Base pública autorizada de Gano Sim para invitados y afiliados.",
+
+          tags: Object.freeze([
+            "gano-public",
+            "public",
+            "gano-sim",
+          ]),
+        },
+      );
+  }
+
+  /*
+   * =========================================================
+   * ASOCIACIÓN DEL ASISTENTE
+   * =========================================================
+   *
+   * KnowledgeManagerService mantiene las reglas de permisos,
+   * actividad y versionado.
+   *
+   * Dejamos que el servicio realice la asociación.
+   */
+
+  if (
+  !publicKnowledgeBase
+    .assistantIds
+    .includes(
+      assistantId,
+    )
+) {
+  publicKnowledgeBase =
+    await knowledgeManager
+      .associateAssistant(
+        knowledgePrincipal,
+
+        publicKnowledgeBase
+          .knowledgeBaseId,
+
+        assistantId,
+      );
+}
+
+  /*
+   * Volvemos a obtener la base después de la asociación.
+   *
+   * Esto garantiza que el objeto utilizado por el runtime
+   * represente el estado persistido más reciente.
+   */
+
+  const persistedKnowledgeBase =
+    await knowledgeRepository.getBase(
+      tenantId,
+
       publicKnowledgeBase
         .knowledgeBaseId,
-      assistantId,
     );
+
+  if (persistedKnowledgeBase) {
+    publicKnowledgeBase =
+      persistedKnowledgeBase;
+  }
+
+  /*
+   * =========================================================
+   * KNOWLEDGE RUNTIME
+   * =========================================================
+   *
+   * createGanoKnowledgeRuntime recibe ahora exactamente el
+   * mismo repositorio Firestore utilizado por el manager.
+   *
+   * Por tanto:
+   *
+   * Knowledge Manager
+   *        │
+   *        ▼
+   * Firestore
+   *        │
+   *        ▼
+   * Knowledge Runtime
+   *        │
+   *        ▼
+   * Assistant
+   */
 
   const ganoKnowledgeRuntime =
     createGanoKnowledgeRuntime({
@@ -214,10 +497,13 @@ async function createHostedRuntime() {
       },
 
       defaultLimit: 8,
-      defaultMinimumScore: 0.15,
+
+      defaultMinimumScore:
+        0.15,
     });
 
   const descriptor =
+
     Object.freeze({
       id: assistantId,
       tenantId,
@@ -431,54 +717,78 @@ async function createHostedRuntime() {
 
   const manager =
     new AssistantManager();
+manager.create({
+  definition:
+    Object.freeze({
+      descriptor,
 
-  manager.create({
-    definition:
-      Object.freeze({
-        descriptor,
+      configuration:
+        Object.freeze({
+          primaryChatProviderId:
+            provider.descriptor.id,
 
-        configuration:
-          Object.freeze({
-            primaryChatProviderId:
-              provider.descriptor.id,
+          tools:
+            Object.freeze([
+              {
+                name:
+                  "gano.getCurrentAffiliateProfile",
 
-            tools:
-              Object.freeze([
-                {
-                  name:
-                    "gano.getCurrentAffiliateProfile",
+                description:
+                  "Obtiene el perfil del afiliado autenticado.",
 
-                  description:
-                    "Obtiene el perfil del afiliado autenticado.",
+                parameters:
+                  Object.freeze({
+                    type:
+                      "object",
 
-                  parameters:
-                    Object.freeze({
-                      type:
-                        "object",
+                    additionalProperties:
+                      false,
 
-                      additionalProperties:
-                        false,
+                    properties:
+                      Object.freeze({}),
+                  }),
+              },
+            ]),
 
-                      properties:
-                        Object.freeze({}),
-                    }),
-                },
-              ]),
+          persistMessages:
+            false,
 
-            persistMessages:
-              false,
-          }),
-      }),
+          /**
+           * TEMPORAL PARA DIAGNÓSTICO.
+           *
+           * El RAG está recuperando correctamente
+           * los documentos y chunks.
+           *
+           * Mientras investigamos por qué el
+           * ResponseValidator rechaza la respuesta,
+           * no permitimos que esa validación
+           * derribe toda la petición HTTP.
+           */
+          rejectInvalidResponse:
+            true,
+        }),
+    }),
 
-    dependencies:
-      Object.freeze({
-        chatProviders,
+  dependencies:
+    Object.freeze({
+      chatProviders,
 
-        knowledge:
-          ganoKnowledgeRuntime
-            .conversationRetriever,
-      }),
-  });
+      /**
+       * Retriever conversacional real.
+       *
+       * Este adapter utiliza:
+       *
+       * FirestoreKnowledgeManagerRepository
+       * +
+       * FirestoreKnowledgeDocumentProcessor
+       * +
+       * GanoKnowledgeCandidateSource
+       */
+      knowledge:
+        ganoKnowledgeRuntime
+          .conversationRetriever,
+    }),
+});
 
   const assistants =
     new InMemoryAssistantRepository();
