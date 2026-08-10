@@ -39,7 +39,6 @@ function normalizePrivateKey(
     "\n",
   );
 }
-
 export function readGanoFirebaseAdminEnvironment():
   GanoFirebaseAdminEnvironment {
   return Object.freeze({
