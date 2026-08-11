@@ -28,7 +28,8 @@
     "clean": "npm run clean --workspaces --if-present",
     "clean:install": "npm run clean && node -e \"const fs=require('fs');fs.rmSync('node_modules',{recursive:true,force:true});fs.rmSync('package-lock.json',{force:true})\" && npm install",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "knowledge:ingest": "node --env-file=.env.local scripts/ingest-knowledge.mjs"
   },
   "keywords": [
     "gano-bot",

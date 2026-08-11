@@ -14,11 +14,22 @@ import type {
   StudioKnowledgeBase,
   StudioTool,
 } from "./domain";
+
 type Route = {
-  readonly page: "dashboard" | "assistants" | "new" | "editor" | "not-found";
+  readonly page:
+    | "dashboard"
+    | "assistants"
+    | "new"
+    | "editor"
+    | "knowledge"
+    | "conversations"
+    | "analytics"
+    | "widget"
+    | "not-found";
   readonly assistantId?: string;
   readonly section?: string;
 };
+
 const SECTIONS = Object.freeze([
   "overview",
   "identity",
@@ -31,10 +42,16 @@ const SECTIONS = Object.freeze([
   "test",
   "publish",
 ]);
+
 function route(path: string): Route {
   if (path === "/" || path === "/dashboard") return { page: "dashboard" };
   if (path === "/assistants") return { page: "assistants" };
   if (path === "/assistants/new") return { page: "new" };
+  if (path === "/knowledge") return { page: "knowledge" };
+  if (path === "/conversations") return { page: "conversations" };
+  if (path === "/analytics") return { page: "analytics" };
+  if (path === "/widget") return { page: "widget" };
+
   const match = /^\/assistants\/([^/]+)(?:\/([^/]+))?$/.exec(path);
   if (match !== null && match[1] !== undefined) {
     const section = match[2] ?? "overview";
@@ -42,12 +59,15 @@ function route(path: string): Route {
       ? { page: "editor", assistantId: decodeURIComponent(match[1]), section }
       : { page: "not-found" };
   }
+
   return { page: "not-found" };
 }
+
 function navigate(path: string): void {
   history.pushState({}, "", path);
   dispatchEvent(new PopStateEvent("popstate"));
 }
+
 function permitted(
   service: AssistantStudioService,
   permission: ReturnType<
@@ -56,6 +76,27 @@ function permitted(
 ): boolean {
   return service.getPrincipal().permissions.includes(permission);
 }
+
+function statusLabel(status: StudioAssistant["status"]): string {
+  if (status === "published") return "Publicado";
+  if (status === "ready") return "Listo";
+  if (status === "validating") return "Validando";
+  if (status === "archived") return "Archivado";
+  if (status === "error") return "Error";
+  return "Borrador";
+}
+
+function formatDate(value: string): string {
+  if (!value) return "Sin fecha";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("es", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
 export function StudioApp({
   service,
 }: {
@@ -63,15 +104,14 @@ export function StudioApp({
 }) {
   const [current, setCurrent] = useState(() => route(location.pathname));
   const [assistants, setAssistants] = useState<readonly StudioAssistant[]>([]);
-  const [knowledge, setKnowledge] = useState<readonly StudioKnowledgeBase[]>(
-    [],
-  );
+  const [knowledge, setKnowledge] = useState<readonly StudioKnowledgeBase[]>([]);
   const [documents, setDocuments] = useState<readonly StudioDocument[]>([]);
   const [tools, setTools] = useState<readonly StudioTool[]>([]);
   const [health, setHealth] = useState<"ready" | "degraded">("degraded");
   const [loading, setLoading] = useState(true);
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [error, setError] = useState<string>();
+
   const refresh = async (signal?: AbortSignal): Promise<void> => {
     setLoading(true);
     try {
@@ -97,37 +137,51 @@ export function StudioApp({
     } catch (cause) {
       if (signal?.aborted) return;
       setError(
-        cause instanceof Error ? cause.message : "No se pudo cargar el Studio.",
+        cause instanceof Error ? cause.message : "No se pudo cargar GANO_BOT Studio.",
       );
     } finally {
       if (!signal?.aborted) setLoading(false);
     }
   };
+
   useEffect(() => {
-    const listener = (): void => setCurrent(route(location.pathname));
+    const listener = (): void => {
+      setCurrent(route(location.pathname));
+      setNavigationOpen(false);
+    };
     addEventListener("popstate", listener);
     return () => removeEventListener("popstate", listener);
   }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     void refresh(controller.signal);
     return () => controller.abort();
   }, [service]);
+
+  const studioActive =
+    current.page === "dashboard" ||
+    current.page === "assistants" ||
+    current.page === "new" ||
+    current.page === "editor";
+
   return (
-    <div className="studio">
+    <div className="studio studio-product-shell">
       <aside
         className={`studio-sidebar ${navigationOpen ? "studio-sidebar-open" : ""}`}
       >
-        <div className="studio-brand">
-          <span>EA</span>
+        <div className="studio-brand studio-product-brand">
+          <span className="studio-brand-mark">GB</span>
           <div>
-            <strong>Assistant Studio</strong>
-            <small>Entorno de desarrollo</small>
+            <strong>GANO_BOT <em>AI</em></strong>
+            <small>Assistant Platform</small>
           </div>
         </div>
+
+        <div className="studio-sidebar-label">Workspace</div>
         <nav aria-label="Navegación principal">
-          <Nav href="/dashboard" active={current.page === "dashboard"}>
-            Resumen
+          <Nav href="/dashboard" active={current.page === "dashboard"} icon="⌂">
+            Inicio
           </Nav>
           <Nav
             href="/assistants"
@@ -136,22 +190,53 @@ export function StudioApp({
               current.page === "new" ||
               current.page === "editor"
             }
+            icon="✦"
           >
             Asistentes
           </Nav>
+          <Nav href="/knowledge" active={current.page === "knowledge"} icon="▤">
+            Conocimiento
+          </Nav>
+          <Nav
+            href="/conversations"
+            active={current.page === "conversations"}
+            icon="◌"
+          >
+            Conversaciones
+          </Nav>
+          <Nav href="/analytics" active={current.page === "analytics"} icon="⌁">
+            Analítica
+          </Nav>
+          <Nav href="/widget" active={current.page === "widget"} icon="◇">
+            Widget
+          </Nav>
         </nav>
+
+        <div className="studio-sidebar-label studio-sidebar-label-secondary">
+          Plataforma
+        </div>
+        <nav aria-label="Administración de plataforma">
+          <a href="/admin" className="studio-admin-link">
+            <span aria-hidden="true">⚙</span>
+            Platform Admin
+          </a>
+        </nav>
+
         <div className="studio-environment">
-          <span className={`studio-dot studio-dot-${health}`} />
-          {health === "ready" ? "Servicios listos" : "Servicios degradados"}
+          <div className="studio-environment-row">
+            <span className={`studio-dot studio-dot-${health}`} />
+            <strong>{health === "ready" ? "Operativo" : "Degradado"}</strong>
+          </div>
           <small>
             {service.kind === "development-memory"
-              ? "Datos volátiles de desarrollo"
+              ? "Studio en modo de desarrollo"
               : "Backend conectado"}
           </small>
         </div>
       </aside>
+
       <main className="studio-main">
-        <header className="studio-topbar">
+        <header className="studio-topbar studio-product-topbar">
           <button
             className="studio-menu"
             type="button"
@@ -161,13 +246,25 @@ export function StudioApp({
           >
             ☰
           </button>
-          <div>
-            <strong>Workspace empresarial</strong>
-            <small>Tenant: {service.getPrincipal().tenantId}</small>
+          <div className="studio-topbar-copy">
+            <strong>{studioActive ? "GANO_BOT Studio" : "GANO_BOT AI"}</strong>
+            <small>Crea, entrena y publica asistentes con tu conocimiento.</small>
           </div>
-          <span className="studio-user">{service.getPrincipal().actorId}</span>
+          <div className="studio-topbar-actions">
+            <button
+              className="studio-button studio-topbar-create"
+              type="button"
+              onClick={() => navigate("/assistants/new")}
+            >
+              + Crear asistente
+            </button>
+            <span className="studio-user" title={service.getPrincipal().actorId}>
+              {service.getPrincipal().actorId}
+            </span>
+          </div>
         </header>
-        <div className="studio-content">
+
+        <div className="studio-content studio-product-content">
           {error !== undefined && (
             <div className="studio-alert studio-alert-error" role="alert">
               {error}
@@ -176,6 +273,7 @@ export function StudioApp({
               </button>
             </div>
           )}
+
           {loading ? (
             <Loading />
           ) : current.page === "dashboard" ? (
@@ -185,6 +283,7 @@ export function StudioApp({
               documents={documents}
               tools={tools}
               health={health}
+              service={service}
             />
           ) : current.page === "assistants" ? (
             <AssistantList
@@ -194,6 +293,19 @@ export function StudioApp({
             />
           ) : current.page === "new" ? (
             <CreateAssistant service={service} />
+          ) : current.page === "knowledge" ? (
+            <KnowledgeHub knowledge={knowledge} documents={documents} service={service} />
+          ) : current.page === "conversations" ? (
+            <ConversationsHub assistants={assistants} />
+          ) : current.page === "analytics" ? (
+            <AnalyticsHub
+              assistants={assistants}
+              knowledge={knowledge}
+              documents={documents}
+              tools={tools}
+            />
+          ) : current.page === "widget" ? (
+            <WidgetHub assistants={assistants} />
           ) : current.page === "editor" && current.assistantId !== undefined ? (
             <AssistantEditor
               key={current.assistantId}
@@ -213,13 +325,16 @@ export function StudioApp({
     </div>
   );
 }
+
 function Nav({
   href,
   active,
+  icon,
   children,
 }: {
   readonly href: string;
   readonly active: boolean;
+  readonly icon?: string;
   readonly children: string;
 }) {
   return (
@@ -231,18 +346,21 @@ function Nav({
         navigate(href);
       }}
     >
-      {children}
+      {icon !== undefined && <span className="studio-nav-icon" aria-hidden="true">{icon}</span>}
+      <span>{children}</span>
     </a>
   );
 }
+
 function Loading() {
   return (
     <div className="studio-loading" role="status">
       <span />
-      Cargando Assistant Studio…
+      Cargando GANO_BOT Studio…
     </div>
   );
 }
+
 function PageHeader({
   eyebrow,
   title,
@@ -265,93 +383,433 @@ function PageHeader({
     </header>
   );
 }
+
 function Dashboard({
   assistants,
   knowledge,
   documents,
   tools,
   health,
+  service,
 }: {
   readonly assistants: readonly StudioAssistant[];
   readonly knowledge: readonly StudioKnowledgeBase[];
   readonly documents: readonly StudioDocument[];
   readonly tools: readonly StudioTool[];
   readonly health: string;
+  readonly service: AssistantStudioService;
 }) {
-  const metrics = [
-    { label: "Asistentes", value: assistants.length },
-    {
-      label: "Publicados",
-      value: assistants.filter((item) => item.status === "published").length,
-    },
-    {
-      label: "Borradores",
-      value: assistants.filter((item) => item.status === "draft").length,
-    },
-    { label: "Knowledge bases", value: knowledge.length },
-    { label: "Documentos", value: documents.length },
-    { label: "Tools disponibles", value: tools.length },
-  ];
+  const activeAssistants = assistants.filter(
+    (item) => item.status === "published" || item.status === "ready",
+  ).length;
+  const readyDocuments = documents.filter((item) => item.status === "ready").length;
+  const totalChunks = documents.reduce((sum, item) => sum + (item.chunks ?? 0), 0);
+  const recentDocuments = [...documents]
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, 4);
+  const recentAssistants = [...assistants]
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, 3);
+
+  return (
+    <>
+      <section className="studio-dashboard-hero">
+        <div>
+          <span className="studio-dashboard-kicker">TU PLATAFORMA DE ASISTENTES</span>
+          <h1>Crea asistentes que conocen tu negocio.</h1>
+          <p>
+            Define su identidad, agrega documentos y datos, prueba sus respuestas
+            y publícalos en tus canales desde un solo lugar.
+          </p>
+          <div className="studio-dashboard-hero-actions">
+            <button
+              className="studio-button studio-primary"
+              type="button"
+              onClick={() => navigate("/assistants/new")}
+            >
+              + Crear nuevo asistente
+            </button>
+            <button
+              className="studio-button"
+              type="button"
+              onClick={() => navigate("/knowledge")}
+            >
+              Gestionar conocimiento
+            </button>
+          </div>
+        </div>
+        <div className="studio-dashboard-hero-status">
+          <span className={`studio-dot studio-dot-${health}`} />
+          <div>
+            <strong>{health === "ready" ? "Sistema operativo" : "Revisión requerida"}</strong>
+            <small>
+              {service.kind === "backend"
+                ? "Servicios conectados al backend"
+                : "Entorno de desarrollo activo"}
+            </small>
+          </div>
+        </div>
+      </section>
+
+      <section className="studio-metrics studio-product-metrics" aria-label="Resumen del Studio">
+        <MetricCard label="Asistentes" value={assistants.length} detail={`${activeAssistants} listos o publicados`} />
+        <MetricCard label="Conocimiento" value={knowledge.length} detail="bases configuradas" />
+        <MetricCard label="Documentos" value={documents.length} detail={`${readyDocuments} procesados`} />
+        <MetricCard label="Chunks" value={totalChunks} detail="fragmentos disponibles" />
+      </section>
+
+      <section className="studio-dashboard-section">
+        <div className="studio-section-heading">
+          <div>
+            <span>TUS ASISTENTES</span>
+            <h2>Asistentes recientes</h2>
+          </div>
+          <button className="studio-button studio-button-ghost" type="button" onClick={() => navigate("/assistants")}>
+            Ver todos
+          </button>
+        </div>
+
+        {recentAssistants.length === 0 ? (
+          <article className="studio-card studio-empty-state">
+            <h3>Tu primer asistente empieza aquí</h3>
+            <p>Configura nombre, propósito, apariencia y conocimiento. GANO_BOT se encarga del resto.</p>
+            <button className="studio-button studio-primary" type="button" onClick={() => navigate("/assistants/new")}>
+              Crear asistente
+            </button>
+          </article>
+        ) : (
+          <div className="studio-assistant-showcase">
+            {recentAssistants.map((assistant) => {
+              const linkedDocuments = documents.filter((document) =>
+                assistant.rag.knowledgeBaseIds.includes(document.knowledgeBaseId),
+              ).length;
+              return (
+                <article className="studio-assistant-product-card" key={assistant.id}>
+                  <div className="studio-assistant-product-head">
+                    <div className="studio-assistant-avatar">
+                      {assistant.identity.avatarUrl ? (
+                        <img src={assistant.identity.avatarUrl} alt="" />
+                      ) : (
+                        <span>AI</span>
+                      )}
+                    </div>
+                    <span className={`studio-status studio-status-${assistant.status}`}>
+                      {statusLabel(assistant.status)}
+                    </span>
+                  </div>
+                  <h3>{assistant.identity.name || assistant.id}</h3>
+                  <p>{assistant.identity.description || "Asistente listo para configurar."}</p>
+                  <div className="studio-assistant-product-meta">
+                    <span>{linkedDocuments} documentos vinculados</span>
+                    <span>Actualizado {formatDate(assistant.updatedAt)}</span>
+                  </div>
+                  <div className="studio-assistant-product-actions">
+                    <button className="studio-button studio-primary" type="button" onClick={() => navigate(`/assistants/${encodeURIComponent(assistant.id)}/test`)}>
+                      Probar
+                    </button>
+                    <button className="studio-button" type="button" onClick={() => navigate(`/assistants/${encodeURIComponent(assistant.id)}`)}>
+                      Editar
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <section className="studio-dashboard-columns">
+        <article className="studio-card studio-dashboard-knowledge-card">
+          <div className="studio-section-heading studio-section-heading-compact">
+            <div>
+              <span>CONOCIMIENTO</span>
+              <h2>Documentos recientes</h2>
+            </div>
+            <button className="studio-button studio-button-ghost" type="button" onClick={() => navigate("/knowledge")}>
+              Abrir biblioteca
+            </button>
+          </div>
+          {recentDocuments.length === 0 ? (
+            <p className="studio-muted">Todavía no hay documentos disponibles.</p>
+          ) : (
+            <div className="studio-document-feed">
+              {recentDocuments.map((document) => (
+                <div className="studio-document-feed-item" key={document.id}>
+                  <span className="studio-document-icon">DOC</span>
+                  <div>
+                    <strong>{document.title}</strong>
+                    <small>{document.mediaType} · {document.status}</small>
+                  </div>
+                  <span>{formatDate(document.updatedAt)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </article>
+
+        <article className="studio-card studio-dashboard-start-card">
+          <span className="studio-dashboard-kicker">FLUJO RECOMENDADO</span>
+          <h2>De idea a asistente publicado</h2>
+          <ol className="studio-product-steps">
+            <li><strong>1</strong><span><b>Crea su identidad</b><small>Nombre, logo, propósito e idioma.</small></span></li>
+            <li><strong>2</strong><span><b>Agrega conocimiento</b><small>PDF, Word, Excel, Markdown y más.</small></span></li>
+            <li><strong>3</strong><span><b>Prueba respuestas</b><small>Valida tono, fuentes y comportamiento.</small></span></li>
+            <li><strong>4</strong><span><b>Publica</b><small>Widget listo para tu sitio o aplicación.</small></span></li>
+          </ol>
+          <button className="studio-button studio-primary" type="button" onClick={() => navigate("/assistants/new")}>
+            Empezar ahora
+          </button>
+        </article>
+      </section>
+
+      <section className="studio-dashboard-mini-grid">
+        <article className="studio-mini-card" onClick={() => navigate("/knowledge")}>
+          <span>▤</span><div><strong>Conocimiento</strong><small>Administra las fuentes de tus asistentes.</small></div>
+        </article>
+        <article className="studio-mini-card" onClick={() => navigate("/widget")}>
+          <span>◇</span><div><strong>Widget</strong><small>Configura la experiencia que verá tu cliente.</small></div>
+        </article>
+        <article className="studio-mini-card" onClick={() => navigate("/analytics")}>
+          <span>⌁</span><div><strong>Analítica</strong><small>Supervisa configuración y cobertura.</small></div>
+        </article>
+        <article className="studio-mini-card" onClick={() => { location.href = "/admin"; }}>
+          <span>⚙</span><div><strong>Platform Admin</strong><small>Administración técnica de la plataforma.</small></div>
+        </article>
+      </section>
+
+      <div className="studio-dashboard-footnote">
+        <span>{tools.length} herramientas disponibles</span>
+        <span>Tenant: {service.getPrincipal().tenantId}</span>
+      </div>
+    </>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  detail,
+}: {
+  readonly label: string;
+  readonly value: number;
+  readonly detail: string;
+}) {
+  return (
+    <article className="studio-metric studio-product-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </article>
+  );
+}
+
+function KnowledgeHub({
+  knowledge,
+  documents,
+  service,
+}: {
+  readonly knowledge: readonly StudioKnowledgeBase[];
+  readonly documents: readonly StudioDocument[];
+  readonly service: AssistantStudioService;
+}) {
+  const ready = documents.filter((item) => item.status === "ready").length;
+  const totalChunks = documents.reduce((sum, item) => sum + (item.chunks ?? 0), 0);
+
   return (
     <>
       <PageHeader
-        eyebrow="DESARROLLO"
-        title="Resumen del workspace"
-        description="Configura y valida asistentes empresariales sin credenciales externas."
+        eyebrow="CONOCIMIENTO"
+        title="La información que hace útil a tu asistente"
+        description="Organiza las fuentes que tus asistentes pueden consultar para responder con precisión."
         actions={
           <button
             className="studio-button studio-primary"
             type="button"
-            onClick={() => navigate("/assistants/new")}
+            onClick={() => { location.href = "/admin/knowledge-manager"; }}
           >
-            Crear asistente
+            Abrir Knowledge Manager
           </button>
         }
       />
-      <section className="studio-metrics" aria-label="Métricas de desarrollo">
-        {metrics.map((item) => (
-          <article className="studio-metric" key={item.label}>
-            <span>{item.label}</span>
-            <strong>{item.value}</strong>
-          </article>
-        ))}
+
+      <section className="studio-metrics studio-product-metrics">
+        <MetricCard label="Bases" value={knowledge.length} detail="colecciones disponibles" />
+        <MetricCard label="Documentos" value={documents.length} detail={`${ready} listos`} />
+        <MetricCard label="Chunks" value={totalChunks} detail="fragmentos indexados" />
+        <MetricCard label="Asociación" value={knowledge.filter((item) => item.status === "active").length} detail="bases activas" />
       </section>
-      <section className="studio-grid">
+
+      <section className="studio-grid studio-knowledge-overview-grid">
         <article className="studio-card">
-          <h2>Estado de servicios</h2>
-          <p>
-            <span className={`studio-dot studio-dot-${health}`} />
-            {health === "ready"
-              ? "Todos los adaptadores responden."
-              : "Uno o más adaptadores no están disponibles."}
-          </p>
-          <p className="studio-muted">
-            No representa disponibilidad productiva.
-          </p>
+          <div className="studio-section-heading studio-section-heading-compact">
+            <div><span>BIBLIOTECA</span><h2>Bases de conocimiento</h2></div>
+          </div>
+          {knowledge.length === 0 ? (
+            <p className="studio-muted">No hay bases disponibles en este entorno.</p>
+          ) : (
+            <div className="studio-stack">
+              {knowledge.map((base) => (
+                <div className="studio-knowledge-row" key={base.id}>
+                  <div><strong>{base.name}</strong><small>{base.id}</small></div>
+                  <div><b>{base.documentCount}</b><small>documentos</small></div>
+                  <span className={`studio-status ${base.status === "active" ? "studio-status-ready" : "studio-status-archived"}`}>
+                    {base.status === "active" ? "Activa" : "Deshabilitada"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </article>
-        <article className="studio-card">
-          <h2>Acciones rápidas</h2>
-          <div className="studio-stack">
-            <button
-              className="studio-button"
-              type="button"
-              onClick={() => navigate("/assistants")}
-            >
-              Ver asistentes
+
+        <article className="studio-card studio-knowledge-callout">
+          <span className="studio-dashboard-kicker">GESTIÓN AVANZADA</span>
+          <h2>Knowledge Manager</h2>
+          <p>
+            El administrador técnico puede cargar, versionar, reprocesar y asociar
+            documentos a los asistentes desde la herramienta especializada.
+          </p>
+          <button className="studio-button studio-primary" type="button" onClick={() => { location.href = "/admin/knowledge-manager"; }}>
+            Gestionar documentos
+          </button>
+          <small>
+            Fuente actual: {service.kind === "backend" ? "Backend" : "entorno de desarrollo"}
+          </small>
+        </article>
+      </section>
+    </>
+  );
+}
+
+function ConversationsHub({
+  assistants,
+}: {
+  readonly assistants: readonly StudioAssistant[];
+}) {
+  return (
+    <>
+      <PageHeader
+        eyebrow="CONVERSACIONES"
+        title="Entiende qué preguntan tus usuarios"
+        description="Este espacio será el centro de revisión de conversaciones, calidad y preguntas sin resolver."
+        actions={
+          assistants[0] !== undefined ? (
+            <button className="studio-button studio-primary" type="button" onClick={() => navigate(`/assistants/${encodeURIComponent(assistants[0]!.id)}/test`)}>
+              Abrir playground
             </button>
-            <button
-              className="studio-button"
-              type="button"
-              onClick={() => navigate("/assistants/new")}
-            >
-              Nuevo borrador
+          ) : undefined
+        }
+      />
+      <section className="studio-card studio-feature-placeholder">
+        <div className="studio-feature-placeholder-icon">◌</div>
+        <div>
+          <span className="studio-dashboard-kicker">PRÓXIMA CONEXIÓN</span>
+          <h2>Historial real de conversaciones</h2>
+          <p>
+            Esta pantalla no muestra números inventados. En el Sprint de Conversaciones
+            conectaremos el historial real, feedback, fuentes utilizadas y preguntas sin respuesta.
+          </p>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function AnalyticsHub({
+  assistants,
+  knowledge,
+  documents,
+  tools,
+}: {
+  readonly assistants: readonly StudioAssistant[];
+  readonly knowledge: readonly StudioKnowledgeBase[];
+  readonly documents: readonly StudioDocument[];
+  readonly tools: readonly StudioTool[];
+}) {
+  const configuredRag = assistants.filter((item) => item.rag.enabled).length;
+  const citations = assistants.filter((item) => item.rag.citationsEnabled).length;
+  const toolsEnabled = assistants.filter((item) => item.tools.enabled).length;
+
+  return (
+    <>
+      <PageHeader
+        eyebrow="ANALÍTICA"
+        title="Cobertura y preparación del workspace"
+        description="Por ahora mostramos señales verificables de configuración. Las métricas de uso real se conectarán al backend de observabilidad."
+      />
+      <section className="studio-metrics studio-product-metrics">
+        <MetricCard label="Asistentes" value={assistants.length} detail={`${configuredRag} con RAG activo`} />
+        <MetricCard label="Citas" value={citations} detail="asistentes con fuentes habilitadas" />
+        <MetricCard label="Documentos" value={documents.length} detail={`${knowledge.length} bases`} />
+        <MetricCard label="Tools" value={tools.length} detail={`${toolsEnabled} asistentes con herramientas`} />
+      </section>
+      <section className="studio-card studio-feature-placeholder">
+        <div className="studio-feature-placeholder-icon">⌁</div>
+        <div>
+          <span className="studio-dashboard-kicker">SIN DATOS SIMULADOS</span>
+          <h2>Analítica productiva en el siguiente Sprint</h2>
+          <p>
+            Conversaciones, satisfacción, temas frecuentes, documentos consultados,
+            preguntas sin respuesta, uso y costos se mostrarán aquí cuando estén conectados
+            a sus fuentes reales.
+          </p>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function WidgetHub({
+  assistants,
+}: {
+  readonly assistants: readonly StudioAssistant[];
+}) {
+  return (
+    <>
+      <PageHeader
+        eyebrow="WIDGET"
+        title="Diseña cómo se verá tu asistente"
+        description="Personaliza identidad, colores y experiencia antes de publicarlo en tu sitio."
+        actions={
+          assistants[0] !== undefined ? (
+            <button className="studio-button studio-primary" type="button" onClick={() => navigate(`/assistants/${encodeURIComponent(assistants[0]!.id)}/widget`)}>
+              Configurar widget
             </button>
+          ) : (
+            <button className="studio-button studio-primary" type="button" onClick={() => navigate("/assistants/new")}>
+              Crear asistente
+            </button>
+          )
+        }
+      />
+      <section className="studio-widget-product-preview">
+        <article className="studio-card studio-widget-product-copy">
+          <span className="studio-dashboard-kicker">EXPERIENCIA DE MARCA</span>
+          <h2>Un widget listo para cada negocio</h2>
+          <p>
+            Cada asistente podrá definir nombre, logo, color, mensaje inicial,
+            preguntas sugeridas, posición y comportamiento sin modificar código.
+          </p>
+          <div className="studio-widget-feature-list">
+            <span>✓ Identidad personalizada</span>
+            <span>✓ Colores de marca</span>
+            <span>✓ Fuentes y referencias</span>
+            <span>✓ Responsive</span>
+          </div>
+        </article>
+        <article className="studio-widget-preview-shell">
+          <div className="studio-widget-preview-head"><strong>GANO_BOT AI</strong><span>×</span></div>
+          <div className="studio-widget-preview-body">
+            <div className="studio-widget-preview-avatar">AI</div>
+            <h3>¡Hola! Soy tu asistente 👋</h3>
+            <p>Estoy listo para responder utilizando el conocimiento que me asignes.</p>
+            <button className="studio-button studio-primary" type="button">Iniciar conversación</button>
           </div>
         </article>
       </section>
     </>
   );
 }
+
 function AssistantList({
   assistants,
   service,
@@ -364,43 +822,82 @@ function AssistantList({
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [busy, setBusy] = useState<string>();
+  const [openMenu, setOpenMenu] = useState<string>();
+
+  const normalizedQuery = query.trim().toLowerCase();
+
   const visible = useMemo(
     () =>
       assistants
-        .filter(
-          (item) =>
-            (status === "all" || item.status === status) &&
-            (item.identity.name.toLowerCase().includes(query.toLowerCase()) ||
-              item.id.includes(query.toLowerCase())),
-        )
+        .filter((item) => {
+          const matchesStatus =
+            status === "all" || item.status === status;
+
+          const matchesQuery =
+            normalizedQuery.length === 0 ||
+            item.identity.name.toLowerCase().includes(normalizedQuery) ||
+            item.identity.description.toLowerCase().includes(normalizedQuery) ||
+            item.id.toLowerCase().includes(normalizedQuery) ||
+            item.identity.tags.some((tag) =>
+              tag.toLowerCase().includes(normalizedQuery),
+            );
+
+          return matchesStatus && matchesQuery;
+        })
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
-    [assistants, query, status],
+    [assistants, normalizedQuery, status],
   );
+
+  const totals = useMemo(
+    () => ({
+      all: assistants.length,
+      ready: assistants.filter(
+        (item) =>
+          item.status === "ready" || item.status === "published",
+      ).length,
+      draft: assistants.filter((item) => item.status === "draft").length,
+      archived: assistants.filter((item) => item.status === "archived").length,
+    }),
+    [assistants],
+  );
+
   const action = async (
     id: string,
     type: "duplicate" | "archive" | "delete",
   ): Promise<void> => {
     if (
       type === "delete" &&
-      !confirm("¿Eliminar este asistente de desarrollo?")
-    )
+      !confirm(
+        "¿Eliminar este asistente? Esta acción no se puede deshacer.",
+      )
+    ) {
       return;
+    }
+
     setBusy(id);
+    setOpenMenu(undefined);
+
     try {
-      if (type === "duplicate") await service.duplicateAssistant(id);
-      else if (type === "archive") await service.archiveAssistant(id);
-      else await service.deleteAssistant(id);
+      if (type === "duplicate") {
+        await service.duplicateAssistant(id);
+      } else if (type === "archive") {
+        await service.archiveAssistant(id);
+      } else {
+        await service.deleteAssistant(id);
+      }
+
       await onRefresh();
     } finally {
       setBusy(undefined);
     }
   };
+
   return (
     <>
       <PageHeader
-        eyebrow="CATÁLOGO"
+        eyebrow="TUS ASISTENTES"
         title="Asistentes"
-        description="Borradores y versiones preparadas dentro del tenant actual."
+        description="Crea, configura, prueba y publica asistentes inteligentes para cada negocio."
         actions={
           permitted(service, "assistants:write") ? (
             <button
@@ -408,100 +905,381 @@ function AssistantList({
               type="button"
               onClick={() => navigate("/assistants/new")}
             >
-              Crear asistente
+              + Crear asistente
             </button>
           ) : undefined
         }
       />
-      <div className="studio-toolbar">
-        <label>
-          Buscar
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.currentTarget.value)}
-            placeholder="Nombre o ID"
-          />
-        </label>
-        <label>
-          Estado
-          <select
-            value={status}
-            onChange={(event) => setStatus(event.currentTarget.value)}
-          >
-            <option value="all">Todos</option>
-            {["draft", "ready", "published", "archived", "error"].map(
-              (value) => (
-                <option value={value} key={value}>
-                  {value}
-                </option>
-              ),
+
+      <section
+        className="studio-assistant-summary"
+        aria-label="Resumen de asistentes"
+      >
+        <button
+          type="button"
+          className={`studio-assistant-summary-card ${
+            status === "all" ? "is-active" : ""
+          }`}
+          onClick={() => setStatus("all")}
+        >
+          <span>Todos</span>
+          <strong>{totals.all}</strong>
+          <small>asistentes creados</small>
+        </button>
+
+        <button
+          type="button"
+          className={`studio-assistant-summary-card ${
+            status === "ready" ? "is-active" : ""
+          }`}
+          onClick={() => setStatus("ready")}
+        >
+          <span>Operativos</span>
+          <strong>{totals.ready}</strong>
+          <small>listos o publicados</small>
+        </button>
+
+        <button
+          type="button"
+          className={`studio-assistant-summary-card ${
+            status === "draft" ? "is-active" : ""
+          }`}
+          onClick={() => setStatus("draft")}
+        >
+          <span>Borradores</span>
+          <strong>{totals.draft}</strong>
+          <small>en configuración</small>
+        </button>
+
+        <button
+          type="button"
+          className={`studio-assistant-summary-card ${
+            status === "archived" ? "is-active" : ""
+          }`}
+          onClick={() => setStatus("archived")}
+        >
+          <span>Archivados</span>
+          <strong>{totals.archived}</strong>
+          <small>fuera de operación</small>
+        </button>
+      </section>
+
+      <section className="studio-assistant-catalog">
+        <div className="studio-assistant-catalog-toolbar">
+          <div className="studio-assistant-search">
+            <span aria-hidden="true">⌕</span>
+
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.currentTarget.value)}
+              placeholder="Buscar por nombre, ID, descripción o etiqueta..."
+              aria-label="Buscar asistentes"
+            />
+
+            {query.length > 0 && (
+              <button
+                type="button"
+                aria-label="Limpiar búsqueda"
+                onClick={() => setQuery("")}
+              >
+                ×
+              </button>
             )}
-          </select>
-        </label>
-      </div>
-      {visible.length === 0 ? (
-        <div className="studio-empty">
-          <h2>No hay asistentes</h2>
-          <p>Crea el primer borrador para iniciar el flujo guiado.</p>
-        </div>
-      ) : (
-        <div className="studio-assistant-list">
-          {visible.map((item) => (
-            <article
-              className="studio-card studio-assistant-card"
-              key={item.id}
+          </div>
+
+          <label className="studio-assistant-filter">
+            <span>Estado</span>
+
+            <select
+              value={status}
+              onChange={(event) => setStatus(event.currentTarget.value)}
             >
-              <div>
-                <span className={`studio-badge studio-badge-${item.status}`}>
-                  {item.status}
-                </span>
-                <h2>{item.identity.name || item.id}</h2>
-                <p>{item.identity.description || "Sin descripción"}</p>
-                <small>
-                  {item.id} · v{item.version} ·{" "}
-                  {item.model.primaryProviderId || "Sin proveedor"}
-                </small>
-              </div>
-              <div className="studio-card-actions">
+              <option value="all">Todos</option>
+              <option value="draft">Borrador</option>
+              <option value="ready">Listo</option>
+              <option value="published">Publicado</option>
+              <option value="archived">Archivado</option>
+              <option value="error">Error</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="studio-assistant-catalog-meta">
+          <span>
+            {visible.length}{" "}
+            {visible.length === 1 ? "asistente" : "asistentes"}
+          </span>
+
+          {(query.length > 0 || status !== "all") && (
+            <button
+              type="button"
+              onClick={() => {
+                setQuery("");
+                setStatus("all");
+              }}
+            >
+              Limpiar filtros
+            </button>
+          )}
+        </div>
+
+        {visible.length === 0 ? (
+          <article className="studio-card studio-assistant-empty">
+            <div className="studio-assistant-empty-icon">AI</div>
+
+            <span className="studio-dashboard-kicker">
+              {assistants.length === 0
+                ? "TU PRIMER ASISTENTE"
+                : "SIN RESULTADOS"}
+            </span>
+
+            <h2>
+              {assistants.length === 0
+                ? "Crea un asistente inteligente en minutos"
+                : "No encontramos asistentes"}
+            </h2>
+
+            <p>
+              {assistants.length === 0
+                ? "Define su identidad, conecta conocimiento, personaliza su experiencia y publícalo cuando esté listo."
+                : "Prueba con otro nombre, ID, etiqueta o estado."}
+            </p>
+
+            {assistants.length === 0 &&
+              permitted(service, "assistants:write") && (
                 <button
                   className="studio-button studio-primary"
                   type="button"
-                  onClick={() => navigate(`/assistants/${item.id}`)}
+                  onClick={() => navigate("/assistants/new")}
                 >
-                  Abrir
+                  + Crear mi primer asistente
                 </button>
-                <button
-                  className="studio-button"
-                  disabled={busy === item.id}
-                  type="button"
-                  onClick={() => void action(item.id, "duplicate")}
+              )}
+          </article>
+        ) : (
+          <div className="studio-assistant-catalog-grid">
+            {visible.map((item) => {
+              const isBusy = busy === item.id;
+
+              const operational =
+                item.status === "ready" ||
+                item.status === "published";
+
+              const linkedBases = item.rag.knowledgeBaseIds.length;
+
+              return (
+                <article
+                  className="studio-assistant-catalog-card"
+                  key={item.id}
                 >
-                  Duplicar
-                </button>
-                <button
-                  className="studio-button"
-                  disabled={busy === item.id}
-                  type="button"
-                  onClick={() => void action(item.id, "archive")}
-                >
-                  Archivar
-                </button>
-                <button
-                  className="studio-button studio-danger"
-                  disabled={busy === item.id}
-                  type="button"
-                  onClick={() => void action(item.id, "delete")}
-                >
-                  Eliminar
-                </button>
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
+                  <div className="studio-assistant-catalog-card-top">
+                    <div
+                      className="studio-assistant-catalog-avatar"
+                      style={{
+                        background:
+                          item.widget.primaryColor ??
+                          "linear-gradient(135deg, #2563eb, #7c3aed)",
+                      }}
+                    >
+                      {item.identity.avatarUrl ? (
+                        <img
+                          src={item.identity.avatarUrl}
+                          alt=""
+                        />
+                      ) : (
+                        <span>
+                          {item.identity.name
+                            ? item.identity.name
+                                .split(/\s+/)
+                                .slice(0, 2)
+                                .map((word) => word[0])
+                                .join("")
+                                .toUpperCase()
+                            : "AI"}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="studio-assistant-catalog-status">
+                      <span
+                        className={`studio-status studio-status-${item.status}`}
+                      >
+                        <i />
+                        {statusLabel(item.status)}
+                      </span>
+
+                      <div className="studio-assistant-menu-wrap">
+                        <button
+                          className="studio-assistant-menu-button"
+                          type="button"
+                          aria-label={`Más acciones para ${
+                            item.identity.name || item.id
+                          }`}
+                          aria-expanded={openMenu === item.id}
+                          onClick={() =>
+                            setOpenMenu((current) =>
+                              current === item.id
+                                ? undefined
+                                : item.id,
+                            )
+                          }
+                        >
+                          •••
+                        </button>
+
+                        {openMenu === item.id && (
+                          <div className="studio-assistant-menu">
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() =>
+                                void action(item.id, "duplicate")
+                              }
+                            >
+                              Duplicar asistente
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() =>
+                                void action(item.id, "archive")
+                              }
+                            >
+                              Archivar
+                            </button>
+
+                            <button
+                              type="button"
+                              className="studio-assistant-menu-danger"
+                              disabled={isBusy}
+                              onClick={() =>
+                                void action(item.id, "delete")
+                              }
+                            >
+                              Eliminar
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="studio-assistant-catalog-body">
+                    <div className="studio-assistant-title-row">
+                      <div>
+                        <h2>
+                          {item.identity.name || item.id}
+                        </h2>
+
+                        <span className="studio-assistant-id">
+                          {item.id}
+                        </span>
+                      </div>
+                    </div>
+
+                    <p>
+                      {item.identity.description ||
+                        "Configura la descripción y el propósito de este asistente."}
+                    </p>
+
+                    <div className="studio-assistant-tags">
+                      {item.identity.tags.slice(0, 3).map((tag) => (
+                        <span key={tag}>{tag}</span>
+                      ))}
+                    </div>
+
+                    <div className="studio-assistant-capabilities">
+                      <div>
+                        <span>Conocimiento</span>
+                        <strong>
+                          {linkedBases > 0
+                            ? `${linkedBases} ${
+                                linkedBases === 1 ? "base" : "bases"
+                              }`
+                            : "Sin conectar"}
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>RAG</span>
+                        <strong>
+                          {item.rag.enabled ? "Activo" : "Inactivo"}
+                        </strong>
+                      </div>
+
+                      <div>
+                        <span>Modelo</span>
+                        <strong>
+                          {item.model.primaryProviderId ||
+                            "Sin configurar"}
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="studio-assistant-catalog-footer">
+                    <div>
+                      <span>
+                        v{item.version}
+                      </span>
+
+                      <span>
+                        Actualizado {formatDate(item.updatedAt)}
+                      </span>
+                    </div>
+
+                    <span
+                      className={`studio-assistant-operational ${
+                        operational ? "is-ready" : ""
+                      }`}
+                    >
+                      <i />
+                      {operational
+                        ? "Operativo"
+                        : "Configuración pendiente"}
+                    </span>
+                  </div>
+
+                  <div className="studio-assistant-catalog-actions">
+                    <button
+                      className="studio-button studio-primary"
+                      type="button"
+                      onClick={() =>
+                        navigate(
+                          `/assistants/${encodeURIComponent(
+                            item.id,
+                          )}/overview`,
+                        )
+                      }
+                    >
+                      Configurar
+                    </button>
+
+                    <button
+                      className="studio-button"
+                      type="button"
+                      onClick={() =>
+                        navigate(
+                          `/assistants/${encodeURIComponent(
+                            item.id,
+                          )}/test`,
+                        )
+                      }
+                    >
+                      Probar
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
     </>
   );
 }
+
 function CreateAssistant({
   service,
 }: {
@@ -509,75 +1287,302 @@ function CreateAssistant({
 }) {
   const [id, setId] = useState("");
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
+
+  const normalizedId = id.trim().toLowerCase();
+
+  const idValid =
+    normalizedId.length >= 3 &&
+    normalizedId.length <= 64 &&
+    /^[a-z0-9][a-z0-9-]{2,63}$/.test(normalizedId);
+
+  const nameValid = name.trim().length > 0;
+
   const create = async (): Promise<void> => {
-    const normalized = id.trim().toLowerCase();
-    if (
-      !/^[a-z0-9][a-z0-9-]{2,63}$/.test(normalized) ||
-      name.trim().length === 0
-    ) {
-      setError("Completa un nombre y un ID seguro.");
+    if (!idValid || !nameValid) {
+      setError(
+        "Completa el nombre y utiliza un ID válido con minúsculas, números o guiones.",
+      );
       return;
     }
+
     setSaving(true);
+    setError(undefined);
+
     try {
       const base = createEmptyAssistant(
         service.getPrincipal().tenantId,
         service.getPrincipal().actorId,
-        normalized,
+        normalizedId,
       );
+
       await service.saveAssistant(
         Object.freeze({
           ...base,
-          identity: Object.freeze({ ...base.identity, name: name.trim() }),
+          identity: Object.freeze({
+            ...base.identity,
+            name: name.trim(),
+            description: description.trim(),
+          }),
+          widget: Object.freeze({
+            ...base.widget,
+            assistantName: name.trim(),
+          }),
         }),
       );
-      navigate(`/assistants/${normalized}/identity`);
+
+      navigate(
+        `/assistants/${encodeURIComponent(normalizedId)}/identity`,
+      );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "No se pudo crear.");
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "No se pudo crear el asistente.",
+      );
     } finally {
       setSaving(false);
     }
   };
+
   return (
     <>
       <PageHeader
         eyebrow="NUEVO ASISTENTE"
-        title="Crear borrador"
-        description="Primero define una identidad segura. Podrás completar las demás secciones después."
+        title="Crea tu asistente"
+        description="Empieza con su identidad. Después podrás agregar conocimiento, comportamiento, herramientas y personalizar el widget."
       />
-      <section className="studio-card studio-form">
-        <Field label="Nombre" value={name} onChange={setName} required />
-        <Field
-          label="Assistant ID"
-          value={id}
-          onChange={setId}
-          required
-          hint="Minúsculas, números y guiones; entre 3 y 64 caracteres."
-        />
-        {error !== undefined && (
-          <p className="studio-field-error" role="alert">
-            {error}
-          </p>
-        )}
-        <div className="studio-actions">
-          <button
-            className="studio-button"
-            type="button"
-            onClick={() => navigate("/assistants")}
-          >
-            Cancelar
-          </button>
-          <button
-            className="studio-button studio-primary"
-            disabled={saving}
-            type="button"
-            onClick={() => void create()}
-          >
-            {saving ? "Creando…" : "Crear y continuar"}
-          </button>
-        </div>
+
+      <section className="studio-create-layout">
+        <article className="studio-card studio-create-main">
+          <div className="studio-create-progress">
+            <div className="studio-create-progress-head">
+              <span>Configuración inicial</span>
+              <strong>Paso 1 de 6</strong>
+            </div>
+
+            <div className="studio-create-progress-track">
+              <span />
+            </div>
+          </div>
+
+          <div className="studio-create-heading">
+            <div className="studio-create-heading-icon">AI</div>
+
+            <div>
+              <h2>Identidad del asistente</h2>
+              <p>
+                Esta información será la base de la experiencia que
+                verán tus usuarios.
+              </p>
+            </div>
+          </div>
+
+          <div className="studio-form studio-create-form">
+            <Field
+              label="Nombre del asistente"
+              value={name}
+              onChange={(next) => {
+                setName(next);
+                setError(undefined);
+              }}
+              required
+              hint="Ejemplo: Asistente de Ventas, Soporte GANO o Consultor Virtual."
+            />
+
+            <label className="studio-field">
+              <span>Descripción</span>
+
+              <textarea
+                rows={4}
+                value={description}
+                maxLength={500}
+                placeholder="Describe brevemente qué hará este asistente..."
+                onChange={(event) =>
+                  setDescription(event.currentTarget.value)
+                }
+              />
+
+              <small>
+                {description.length}/500 caracteres
+              </small>
+            </label>
+
+            <Field
+              label="Assistant ID"
+              value={id}
+              onChange={(next) => {
+                setId(
+                  next
+                    .toLowerCase()
+                    .replace(/\s+/g, "-")
+                    .replace(/[^a-z0-9-]/g, ""),
+                );
+                setError(undefined);
+              }}
+              required
+              hint="Identificador técnico único. Minúsculas, números y guiones; entre 3 y 64 caracteres."
+            />
+
+            {normalizedId.length > 0 && (
+              <div
+                className={`studio-create-id-preview ${
+                  idValid ? "is-valid" : "is-invalid"
+                }`}
+              >
+                <span>
+                  {idValid ? "✓" : "!"}
+                </span>
+
+                <div>
+                  <strong>
+                    {idValid
+                      ? "ID válido"
+                      : "Revisa el identificador"}
+                  </strong>
+
+                  <small>
+                    {normalizedId}
+                  </small>
+                </div>
+              </div>
+            )}
+
+            {error !== undefined && (
+              <p
+                className="studio-field-error"
+                role="alert"
+              >
+                {error}
+              </p>
+            )}
+
+            <div className="studio-create-actions">
+              <button
+                className="studio-button"
+                type="button"
+                disabled={saving}
+                onClick={() => navigate("/assistants")}
+              >
+                Cancelar
+              </button>
+
+              <button
+                className="studio-button studio-primary"
+                disabled={
+                  saving ||
+                  !idValid ||
+                  !nameValid ||
+                  !permitted(service, "assistants:write")
+                }
+                type="button"
+                onClick={() => void create()}
+              >
+                {saving
+                  ? "Creando asistente…"
+                  : "Crear y continuar →"}
+              </button>
+            </div>
+          </div>
+        </article>
+
+        <aside className="studio-create-sidebar">
+          <article className="studio-create-preview">
+            <span className="studio-dashboard-kicker">
+              VISTA PREVIA
+            </span>
+
+            <div className="studio-create-preview-avatar">
+              {name.trim()
+                ? name
+                    .trim()
+                    .split(/\s+/)
+                    .slice(0, 2)
+                    .map((word) => word[0])
+                    .join("")
+                    .toUpperCase()
+                : "AI"}
+            </div>
+
+            <h3>
+              {name.trim() || "Tu nuevo asistente"}
+            </h3>
+
+            <p>
+              {description.trim() ||
+                "La descripción de tu asistente aparecerá aquí."}
+            </p>
+
+            <div className="studio-create-preview-message">
+              <span>AI</span>
+
+              <p>
+                ¡Hola! Estoy listo para ayudarte. Agrega conocimiento
+                para que pueda responder sobre tu negocio.
+              </p>
+            </div>
+          </article>
+
+          <article className="studio-card studio-create-roadmap">
+            <span className="studio-dashboard-kicker">
+              CONFIGURACIÓN
+            </span>
+
+            <h3>Tu asistente en 6 pasos</h3>
+
+            <ol>
+              <li className="is-current">
+                <strong>1</strong>
+                <div>
+                  <b>Identidad</b>
+                  <small>Nombre y propósito</small>
+                </div>
+              </li>
+
+              <li>
+                <strong>2</strong>
+                <div>
+                  <b>Conocimiento</b>
+                  <small>Documentos y datos</small>
+                </div>
+              </li>
+
+              <li>
+                <strong>3</strong>
+                <div>
+                  <b>Comportamiento</b>
+                  <small>Tono e instrucciones</small>
+                </div>
+              </li>
+
+              <li>
+                <strong>4</strong>
+                <div>
+                  <b>Widget</b>
+                  <small>Logo, colores y experiencia</small>
+                </div>
+              </li>
+
+              <li>
+                <strong>5</strong>
+                <div>
+                  <b>Prueba</b>
+                  <small>Valida sus respuestas</small>
+                </div>
+              </li>
+
+              <li>
+                <strong>6</strong>
+                <div>
+                  <b>Publicación</b>
+                  <small>Activa tu asistente</small>
+                </div>
+              </li>
+            </ol>
+          </article>
+        </aside>
       </section>
     </>
   );
