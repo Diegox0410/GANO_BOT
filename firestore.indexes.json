@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "prospectPresentations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerUid", "order": "ASCENDING" },
+        { "fieldPath": "personId", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
