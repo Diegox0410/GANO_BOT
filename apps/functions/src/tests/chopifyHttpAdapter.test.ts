@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { ChopifyHttpAdapter } from '../commerce/chopifyHttpAdapter.js';
+const calls:Array<{url:string;init:RequestInit}>=[];
+const fakeFetch:typeof fetch=async(input,init)=>{calls.push({url:String(input),init:init??{}});return new Response(JSON.stringify({ok:true,data:{proofId:'proof-1',orderId:'order-1',status:'pending_review'}}),{status:200,headers:{'content-type':'application/json'}})};
+const adapter=new ChopifyHttpAdapter({baseUrl:'https://chopify.example',bearerToken:'server-secret',fetchImpl:fakeFetch});
+const context={tenantId:'tenant-floes',assistantId:'commerce-assistant',actorId:'customer-1',conversationId:'conv-1',requestId:'req-1',correlationId:'corr-1',idempotencyKey:'idem-1'};
+const proof=await adapter.attachPaymentProof(context,{orderId:'order-1',proofUrl:'https://files.example/proof'});
+assert.equal(proof.status,'pending_review');assert.equal(calls.length,1);assert.equal(calls[0]?.url,'https://chopify.example/api/commerce');const headers=new Headers(calls[0]?.init.headers);assert.equal(headers.get('x-chopify-tenant-id'),'tenant-floes');assert.equal(headers.get('x-request-id'),'req-1');assert.equal(headers.get('x-correlation-id'),'corr-1');const body=JSON.parse(String(calls[0]?.init.body));assert.equal(body.tenantId,undefined);assert.equal(body.idempotencyKey,'idem-1');assert.equal(body.operation,'attachPaymentProof');
+assert.throws(()=>new ChopifyHttpAdapter({baseUrl:'http://unsafe.example',bearerToken:'x'}),/HTTPS/);
+console.log('Chopify HTTP Adapter H3: HTTPS, tenant header, correlación, idempotencia y PaymentProof pendiente OK');
