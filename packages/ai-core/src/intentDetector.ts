@@ -645,7 +645,7 @@ function freezeDetection(
  * REGLAS PREDETERMINADAS
  * ========================================================================== */
 
-export const DEFAULT_INTENT_RULES:
+export const GANO_SIM_INTENT_RULES:
   readonly AIIntentRule[] =
   Object.freeze([
     {
@@ -1330,7 +1330,22 @@ export const DEFAULT_INTENT_RULES:
  * PATRONES DE ENTIDADES PREDETERMINADOS
  * ========================================================================== */
 
-export const DEFAULT_ENTITY_PATTERNS:
+export const DEFAULT_INTENT_RULES:
+  readonly AIIntentRule[] =
+  Object.freeze(
+    GANO_SIM_INTENT_RULES.filter((rule) =>
+      [
+        "greeting",
+        "help",
+        "document-search",
+        "conversation-summary",
+        "tool-request",
+        "general-question",
+      ].includes(rule.id),
+    ),
+  );
+
+export const GANO_SIM_ENTITY_PATTERNS:
   readonly AIEntityPattern[] =
   Object.freeze([
     {
@@ -1434,6 +1449,14 @@ export const DEFAULT_ENTITY_PATTERNS:
 /* ============================================================================
  * EVALUACIÓN DE REGLAS
  * ========================================================================== */
+
+export const DEFAULT_ENTITY_PATTERNS:
+  readonly AIEntityPattern[] =
+  Object.freeze(
+    GANO_SIM_ENTITY_PATTERNS.filter((pattern) =>
+      ["percentage", "money", "document_type"].includes(pattern.name),
+    ),
+  );
 
 function evaluateRule(
   rule: AIIntentRule,

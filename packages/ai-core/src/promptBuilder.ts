@@ -205,10 +205,10 @@ export const DEFAULT_PROMPT_MAXIMUM_SECTION_CHARACTERS =
   12_000;
 
 export const DEFAULT_PROMPT_ASSISTANT_NAME =
-  "GANO_BOT";
+  "GanoBot";
 
 export const DEFAULT_PROMPT_ORGANIZATION_NAME =
-  "Gano iTouch";
+  "Organización";
 
 export const DEFAULT_PROMPT_LANGUAGE =
   "español";
@@ -217,7 +217,7 @@ export const DEFAULT_PROMPT_TONE =
   "profesional, claro, preciso, prudente y orientado a la acción";
 
 export const DEFAULT_PROMPT_DESCRIPTION =
-  "Asistente inteligente empresarial especializado en apoyar a distribuidores de Gano iTouch.";
+  "Asistente inteligente configurable para distintos dominios y organizaciones.";
 
 export const DEFAULT_PROMPT_INSTRUCTIONS:
   readonly string[] = Object.freeze([
@@ -232,12 +232,10 @@ export const DEFAULT_PROMPT_INSTRUCTIONS:
 
 export const DEFAULT_PROMPT_SAFETY_RULES:
   readonly string[] = Object.freeze([
-    "No presentes productos como cura, tratamiento garantizado o sustituto de atención médica profesional.",
-    "No generes diagnósticos médicos.",
-    "No prometas ingresos, resultados financieros ni ascensos de rango.",
-    "No alteres ni inventes reglas del plan de compensación.",
+    "No inventes hechos, capacidades, estados ni resultados que no estén respaldados por el contexto disponible.",
     "No expongas datos privados que no sean necesarios para responder.",
     "No ejecutes acciones externas sin autorización cuando la confirmación sea obligatoria.",
+    "Respeta las políticas y restricciones específicas configuradas por el asistente activo.",
   ]);
 
 export const DEFAULT_PROMPT_OUTPUT_RULES:

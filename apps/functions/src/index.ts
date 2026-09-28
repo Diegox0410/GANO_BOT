@@ -10,3 +10,4 @@ export * from "./integrations/ganoSim.js";
 export * from "./integrations/ganoKnowledgePlan.js";
 export * from "./integrations/ganoKnowledgeCandidateSource.js";
 export * from "./integrations/ganoKnowledgeRuntime.js";
+export * from "./integrations/ganoSimAssistantProfile.js";

@@ -482,6 +482,10 @@ export * from "./embeddings";
 export * from "./providers";
 export * from "./chat";
 export * from "./runtime/index.js";
+export {
+  GANO_SIM_INTENT_RULES,
+  GANO_SIM_ENTITY_PATTERNS,
+} from "./intentDetector.js";
 export * as KnowledgePlatform from "./knowledge/index.js";
 export * as RAGEngine from "./rag/index.js";
 export * as MemoryEngine from "./memory/index.js";

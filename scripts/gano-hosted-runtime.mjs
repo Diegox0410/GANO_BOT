@@ -31,6 +31,8 @@ import {
   createBackendApplication,
   createGanoKnowledgeRuntime,
   createGanoSimAffiliateProfileTool,
+  GANO_SIM_INTENT_CONFIG,
+  GANO_SIM_PROMPT_CONFIG,
 } from "../apps/functions/dist/index.js";
 
 import {
@@ -726,6 +728,12 @@ manager.create({
         Object.freeze({
           primaryChatProviderId:
             provider.descriptor.id,
+
+          intent:
+            GANO_SIM_INTENT_CONFIG,
+
+          prompt:
+            GANO_SIM_PROMPT_CONFIG,
 
           tools:
             Object.freeze([
