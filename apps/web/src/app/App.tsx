@@ -17,6 +17,7 @@ import type {
   StudioPrincipal,
 } from "../features/studio/domain";
 import { InMemoryAssistantStudioService } from "../features/studio/service";
+import { ProductionStudio } from "./ProductionStudio";
 
 /**
  * =========================================================
@@ -35,20 +36,10 @@ import { InMemoryAssistantStudioService } from "../features/studio/service";
  *
  * IMPORTANTE:
  *
- * Durante este primer Sprint mantenemos el servicio Studio
- * en memoria porque el adaptador BackendAssistantStudioService
- * actual todavía no implementa las mutaciones:
- *
- * - crear;
- * - editar;
- * - duplicar;
- * - publicar;
- * - eliminar asistentes.
- *
- * NO vamos a fingir que esas operaciones están persistidas.
- *
- * En el siguiente Sprint conectaremos esas operaciones al
- * Backend real.
+ * Desarrollo y tests conservan el Studio en memoria.
+ * Los builds de producción usan ProductionStudio, que exige
+ * autenticación Firebase y conecta el adaptador Backend real.
+ * La autoridad de tenant/permisos permanece en el Backend.
  * =========================================================
  */
 
@@ -248,10 +239,8 @@ export function App(): React.JSX.Element {
    * STUDIO SERVICE
    * =======================================================
    *
-   * Temporal durante Sprint Studio 1.
-   *
-   * En Sprint Studio 2 será reemplazado por un adaptador
-   * Backend completamente persistente.
+   * Fixture exclusivo para desarrollo/tests.
+   * Producción no utiliza este servicio.
    */
 
   const studioService =
@@ -367,6 +356,10 @@ export function App(): React.JSX.Element {
    * /assistants/:assistantId
    * /assistants/:assistantId/:section
    */
+
+  if (import.meta.env.PROD) {
+    return <ProductionStudio />;
+  }
 
   return (
     <StudioApp
