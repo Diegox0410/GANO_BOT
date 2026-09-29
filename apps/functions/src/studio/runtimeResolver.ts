@@ -17,7 +17,11 @@ export interface RuntimeAssistantConfiguration {
 
 export class StudioRuntimeConfigurationResolver {
   public constructor(private readonly studio: StudioControlPlane) {}
-  public async resolve(tenantId: string, assistantId: string): Promise<RuntimeAssistantConfiguration> {
+  public async resolve(
+    tenantId: string,
+    assistantId: string,
+    backendAllowedToolIds: readonly string[],
+  ): Promise<RuntimeAssistantConfiguration> {
     const value = await this.studio.resolvePublished(tenantId, assistantId);
     const prompt = [
       value.behavior.systemPrompt.trim(),
@@ -33,7 +37,13 @@ export class StudioRuntimeConfigurationResolver {
       groundingMode: value.rag.groundingMode,
       knowledgeBaseIds: Object.freeze([...value.rag.knowledgeBaseIds]),
       memoryEnabled: value.memory.enabled,
-      toolAllowlist: Object.freeze(value.tools.enabled ? [...value.tools.allowlist] : []),
+      toolAllowlist: Object.freeze(
+        value.tools.enabled
+          ? value.tools.allowlist.filter((toolId) =>
+              backendAllowedToolIds.includes(toolId),
+            )
+          : [],
+      ),
       maximumToolCalls: value.tools.maximumCalls,
       maximumToolRounds: value.tools.maximumRounds,
     });

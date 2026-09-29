@@ -15,11 +15,16 @@ export class FirestoreStudioRepository implements StudioRepository {
 
   async list(tenantId: string): Promise<readonly StudioAssistantConfiguration[]> {
     const snap = await this.assistants(tenantId).get();
-    return Object.freeze(snap.docs.map(doc => doc.data() as StudioAssistantConfiguration));
+    return Object.freeze(
+      snap.docs
+        .map(doc => doc.data() as StudioAssistantConfiguration)
+        .filter(value => value.tenantId === tenantId),
+    );
   }
   async get(tenantId: string, assistantId: string): Promise<StudioAssistantConfiguration | undefined> {
     const snap = await this.assistants(tenantId).doc(safe(assistantId)).get();
-    return snap.exists ? snap.data() as StudioAssistantConfiguration : undefined;
+    const value = snap.exists ? snap.data() as StudioAssistantConfiguration : undefined;
+    return value?.tenantId === tenantId && value.id === assistantId ? value : undefined;
   }
   async save(value: StudioAssistantConfiguration): Promise<void> {
     await this.assistants(value.tenantId).doc(safe(value.id)).set(value, { merge: false });
@@ -29,7 +34,8 @@ export class FirestoreStudioRepository implements StudioRepository {
   }
   async getPublished(tenantId: string, assistantId: string): Promise<StudioPublishedVersion | undefined> {
     const snap = await this.published(tenantId).doc(safe(assistantId)).get();
-    return snap.exists ? snap.data() as StudioPublishedVersion : undefined;
+    const value = snap.exists ? snap.data() as StudioPublishedVersion : undefined;
+    return value?.tenantId === tenantId && value.assistantId === assistantId ? value : undefined;
   }
   async savePublished(value: StudioPublishedVersion): Promise<void> {
     await this.published(value.tenantId).doc(safe(value.assistantId)).set(value, { merge: false });

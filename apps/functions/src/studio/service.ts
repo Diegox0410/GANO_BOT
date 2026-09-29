@@ -1,4 +1,5 @@
 import { BackendApiError } from "../errors.js";
+import { authorize } from "../security.js";
 import type { StudioAssistantConfiguration, StudioMutationContext, StudioPublishedVersion, StudioRepository } from "./contracts.js";
 
 const clone = <T>(value: T): T => structuredClone(value);
@@ -19,7 +20,13 @@ export function validateStudioConfiguration(value: StudioAssistantConfiguration)
 }
 
 export class StudioControlPlane {
-  public constructor(private readonly repository: StudioRepository) {}
+  public constructor(
+    private readonly repository: StudioRepository,
+    private readonly resolveBackendAllowedToolIds: (
+      tenantId: string,
+      assistantId: string,
+    ) => readonly string[] = () => Object.freeze([]),
+  ) {}
 
   public list(tenantId: string): Promise<readonly StudioAssistantConfiguration[]> {
     return this.repository.list(tenantId);
@@ -32,10 +39,14 @@ export class StudioControlPlane {
   public async saveDraft(input: StudioAssistantConfiguration, context: StudioMutationContext): Promise<StudioAssistantConfiguration> {
     if (input.tenantId !== context.principal.tenantId)
       throw new BackendApiError("FORBIDDEN", "No se permite escribir en otro tenant.", 403);
-    if (!context.principal.permissions.includes("assistants:write") && !context.principal.permissions.includes("assistants:update"))
-      throw new BackendApiError("FORBIDDEN", "No tienes permiso para editar asistentes.", 403);
-
     const current = await this.repository.get(input.tenantId, input.id);
+    authorize(
+      context.principal,
+      current === undefined ? "assistants:create" : "assistants:update",
+      input.tenantId,
+      input.id,
+    );
+    this.ensureToolAllowlist(input);
     const next = Object.freeze({
       ...clone(input),
       version: (current?.version ?? 0) + 1,
@@ -50,15 +61,13 @@ export class StudioControlPlane {
   }
 
   public async publish(tenantId: string, assistantId: string, context: StudioMutationContext): Promise<StudioPublishedVersion> {
-    if (tenantId !== context.principal.tenantId)
-      throw new BackendApiError("FORBIDDEN", "No se permite publicar en otro tenant.", 403);
-    if (!context.principal.permissions.includes("assistants:publish"))
-      throw new BackendApiError("FORBIDDEN", "No tienes permiso para publicar.", 403);
+    authorize(context.principal, "assistants:publish", tenantId, assistantId);
 
     const current = await this.repository.get(tenantId, assistantId);
     if (!current) throw new BackendApiError("ASSISTANT_NOT_FOUND", "No existe el asistente.", 404);
     const errors = validateStudioConfiguration(current);
     if (errors.length) throw new BackendApiError("BAD_REQUEST", `Configuración inválida: ${errors.join("; ")}`, 400);
+    this.ensureToolAllowlist(current);
 
     const publishedConfig = Object.freeze({
       ...clone(current),
@@ -80,18 +89,40 @@ export class StudioControlPlane {
   }
 
   public async archive(tenantId: string, assistantId: string, context: StudioMutationContext): Promise<StudioAssistantConfiguration> {
+    authorize(context.principal, "assistants:archive", tenantId, assistantId);
     const current = await this.repository.get(tenantId, assistantId);
     if (!current) throw new BackendApiError("ASSISTANT_NOT_FOUND", "No existe el asistente.", 404);
-    return this.saveDraft(Object.freeze({ ...current, status: "archived" }), context).then(async saved => {
-      const archived = Object.freeze({ ...saved, status: "archived" as const });
-      await this.repository.save(archived);
-      return archived;
+    const archived = Object.freeze({
+      ...clone(current),
+      version: current.version + 1,
+      status: "archived" as const,
+      updatedAt: context.now,
+      updatedBy: context.principal.actorId,
     });
+    await this.repository.save(archived);
+    return archived;
   }
 
   public async resolvePublished(tenantId: string, assistantId: string): Promise<StudioAssistantConfiguration> {
     const value = await this.repository.getPublished(tenantId, assistantId);
     if (!value) throw new BackendApiError("ASSISTANT_NOT_FOUND", "No existe una versión publicada.", 404);
     return value.configuration;
+  }
+
+  private ensureToolAllowlist(value: StudioAssistantConfiguration): void {
+    if (!value.tools.enabled) return;
+    const backendAllowed = new Set(
+      this.resolveBackendAllowedToolIds(value.tenantId, value.id),
+    );
+    const unauthorized = value.tools.allowlist.filter(
+      (toolId) => !backendAllowed.has(toolId),
+    );
+    if (unauthorized.length > 0) {
+      throw new BackendApiError(
+        "FORBIDDEN",
+        "Studio no puede habilitar herramientas no autorizadas por el backend.",
+        403,
+      );
+    }
   }
 }

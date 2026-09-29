@@ -1,9 +1,10 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { StudioApp } from "../src/features/studio/StudioApp";
 import { createEmptyAssistant, importStudioAssistant, safeExportAssistant, validateStudioAssistant } from "../src/features/studio/domain";
-import { InMemoryAssistantStudioService } from "../src/features/studio/service";
+import { BackendAssistantStudioService, InMemoryAssistantStudioService } from "../src/features/studio/service";
+import { MockChatTransport } from "@gano-bot/chat-widget";
 import type { StudioAssistant, StudioPermission, StudioPrincipal } from "../src/features/studio/domain";
 
 const permissions: readonly StudioPermission[] = Object.freeze(["assistants:read","assistants:write","assistants:publish","knowledge:read","knowledge:write","tools:read","tools:configure","metrics:read"]);
@@ -88,5 +89,42 @@ describe("Assistant Studio", () => {
     await userEvent.click(within(editorNavigation).getByRole("link", { name: "Widget" }));
     expect(await screen.findByRole("heading", { name: "Branding del Widget" })).toBeInTheDocument();
     expect(screen.getByText("Vista previa en tiempo real")).toBeInTheDocument();
+  });
+
+  it("mapea draft, publish y archive contra la API Studio tenant-scoped", async () => {
+    const value = configured();
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      const body = init?.body === undefined ? undefined : JSON.parse(String(init.body)) as Readonly<Record<string, unknown>>;
+      expect(body?.tenantId ?? "tenant-a").toBe("tenant-a");
+      const data = path.endsWith("/publish")
+        ? { configuration: { ...value, status: "published" } }
+        : path.endsWith("/archive")
+          ? { ...value, status: "archived" }
+          : value;
+      return new Response(JSON.stringify({ success: true, data }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const service = new BackendAssistantStudioService({
+      apiUrl: "https://api.example.test",
+      principal,
+      tokenProvider: async () => "signed-token",
+      fetchImplementation: fetcher,
+      chatTransportFactory: () => new MockChatTransport(async () => ({
+        conversationId: "unused",
+        message: { id: "unused", role: "assistant", content: "", timestamp: "2026-09-28T00:00:00.000Z", status: "completed" },
+        citations: [],
+      })),
+    });
+    expect((await service.saveAssistant(value)).id).toBe(value.id);
+    expect((await service.publishAssistant(value.id)).status).toBe("published");
+    expect((await service.archiveAssistant(value.id)).status).toBe("archived");
+    expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual([
+      "https://api.example.test/v1/studio/assistants/assistant-a",
+      "https://api.example.test/v1/studio/assistants/assistant-a/publish",
+      "https://api.example.test/v1/studio/assistants/assistant-a/archive",
+    ]);
   });
 });

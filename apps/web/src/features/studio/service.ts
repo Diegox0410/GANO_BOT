@@ -276,54 +276,61 @@ export class BackendAssistantStudioService implements AssistantStudioService {
   public async listAssistants(
     signal?: AbortSignal,
   ): Promise<readonly StudioAssistant[]> {
-    const values = await this.readList("/v1/assistants", signal);
-    return Object.freeze(
-      values.map((item) => {
-        const descriptor = this.record(item).descriptor;
-        const data = this.record(descriptor);
-        const base = createEmptyAssistant(
-          this.config.principal.tenantId,
-          this.config.principal.actorId,
-          String(data.id),
-        );
-        return Object.freeze({
-          ...base,
-          identity: Object.freeze({
-            ...base.identity,
-            name: String(data.name ?? data.id),
-            description: String(data.description ?? ""),
-          }),
-          status: data.enabled === true ? "ready" : "draft",
-        });
-      }),
-    );
+    const values = await this.readList("/v1/studio/assistants", signal);
+    return Object.freeze(values.map((item) => this.toAssistant(item)));
   }
   public async getAssistant(
     id: string,
     signal?: AbortSignal,
   ): Promise<StudioAssistant | undefined> {
-    return (await this.listAssistants(signal)).find((item) => item.id === id);
+    try {
+      return this.toAssistant(
+        await this.readData(`/v1/studio/assistants/${encodeURIComponent(id)}`, signal),
+      );
+    } catch (error) {
+      if (error instanceof BackendStudioError && error.status === 404) return undefined;
+      throw error;
+    }
   }
   public async saveAssistant(
-    _value: StudioAssistant,
+    value: StudioAssistant,
+    signal?: AbortSignal,
   ): Promise<StudioAssistant> {
-    throw new Error(
-      "El Backend del Hito 8 no expone mutaciones administrativas.",
+    return this.toAssistant(
+      await this.readData(
+        `/v1/studio/assistants/${encodeURIComponent(value.id)}`,
+        signal,
+        {
+          method: "PUT",
+          body: JSON.stringify(this.toBackendConfiguration(value)),
+        },
+      ),
     );
   }
-  public async deleteAssistant(_id: string): Promise<void> {
-    throw new Error(
-      "El Backend del Hito 8 no expone eliminación administrativa.",
-    );
+  public async deleteAssistant(id: string, signal?: AbortSignal): Promise<void> {
+    await this.archiveAssistant(id, signal);
   }
   public async duplicateAssistant(_id: string): Promise<StudioAssistant> {
     throw new Error("Duplicación no disponible en el Backend actual.");
   }
-  public async archiveAssistant(_id: string): Promise<StudioAssistant> {
-    throw new Error("Archivado no disponible en el Backend actual.");
+  public async archiveAssistant(id: string, signal?: AbortSignal): Promise<StudioAssistant> {
+    return this.toAssistant(
+      await this.readData(
+        `/v1/studio/assistants/${encodeURIComponent(id)}/archive`,
+        signal,
+        { method: "POST" },
+      ),
+    );
   }
-  public async publishAssistant(_id: string): Promise<StudioAssistant> {
-    throw new Error("Publicación no disponible en el Backend actual.");
+  public async publishAssistant(id: string, signal?: AbortSignal): Promise<StudioAssistant> {
+    const published = this.record(
+      await this.readData(
+        `/v1/studio/assistants/${encodeURIComponent(id)}/publish`,
+        signal,
+        { method: "POST" },
+      ),
+    );
+    return this.toAssistant(published.configuration);
   }
   public async listKnowledgeBases(
     signal?: AbortSignal,
@@ -403,20 +410,144 @@ export class BackendAssistantStudioService implements AssistantStudioService {
     const root = this.record(await this.read(path, signal));
     return Array.isArray(root.data) ? root.data : Object.freeze([]);
   }
-  private async read(path: string, signal?: AbortSignal): Promise<unknown> {
+  private async readData(
+    path: string,
+    signal?: AbortSignal,
+    init: RequestInit = {},
+  ): Promise<unknown> {
+    const root = this.record(await this.read(path, signal, init));
+    return root.data;
+  }
+  private async read(
+    path: string,
+    signal?: AbortSignal,
+    init: RequestInit = {},
+  ): Promise<unknown> {
     const token = await this.config.tokenProvider();
     const response = await this.fetcher(
       `${this.config.apiUrl.replace(/\/$/, "")}${path}`,
       {
-        headers:
-          token === undefined
-            ? undefined
-            : { authorization: `Bearer ${token}` },
+        ...init,
+        headers: {
+          accept: "application/json",
+          ...(init.body !== undefined ? { "content-type": "application/json" } : {}),
+          ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+        },
         signal,
       },
     );
     const text = await response.text();
-    if (!response.ok) throw new Error(`Backend respondió ${response.status}.`);
+    if (!response.ok) throw new BackendStudioError(response.status);
     return JSON.parse(text) as unknown;
+  }
+
+  private toBackendConfiguration(value: StudioAssistant): unknown {
+    return Object.freeze({
+      id: value.id,
+      tenantId: this.config.principal.tenantId,
+      version: value.version,
+      status: value.status === "archived" ? "archived" : value.status === "published" ? "published" : "draft",
+      identity: Object.freeze({
+        name: value.identity.name,
+        description: value.identity.description,
+        purpose: value.identity.purpose,
+        locale: value.identity.locale,
+        allowedLocales: value.identity.allowedLocales,
+        tone: value.identity.tone,
+        instructions: value.identity.instructions,
+        welcomeMessage: value.identity.welcomeMessage,
+      }),
+      behavior: value.behavior,
+      rag: Object.freeze({
+        enabled: value.rag.enabled,
+        groundingMode: value.rag.groundingMode,
+        knowledgeBaseIds: value.rag.knowledgeBaseIds,
+        topK: value.rag.topK,
+        minimumScore: value.rag.minimumScore,
+        citationsEnabled: value.rag.citationsEnabled,
+      }),
+      memory: Object.freeze({
+        enabled: value.memory.enabled,
+        shortTerm: value.memory.shortTerm,
+        longTerm: value.memory.longTerm,
+        summary: value.memory.summary,
+        retentionDays: value.memory.retentionDays,
+        consentRequired: value.memory.consentRequired,
+      }),
+      tools: Object.freeze({
+        enabled: value.tools.enabled,
+        allowlist: value.tools.allowlist,
+        maximumRisk: value.tools.maximumRisk,
+        maximumCalls: value.tools.maximumCalls,
+        maximumRounds: value.tools.maximumRounds,
+      }),
+      channels: Object.freeze(["WEB"]),
+      createdAt: value.createdAt,
+      updatedAt: value.updatedAt,
+      createdBy: value.createdBy,
+      updatedBy: value.updatedBy,
+    });
+  }
+
+  private toAssistant(raw: unknown): StudioAssistant {
+    const value = this.record(raw);
+    const identity = this.record(value.identity);
+    const behavior = this.record(value.behavior);
+    const rag = this.record(value.rag);
+    const memory = this.record(value.memory);
+    const tools = this.record(value.tools);
+    const id = String(value.id);
+    const base = createEmptyAssistant(
+      this.config.principal.tenantId,
+      this.config.principal.actorId,
+      id,
+    );
+    const mapped = Object.freeze({
+      ...base,
+      version: Number(value.version ?? base.version),
+      status: value.status === "published" || value.status === "archived" ? value.status : "draft",
+      identity: Object.freeze({
+        ...base.identity,
+        name: String(identity.name ?? ""),
+        description: String(identity.description ?? ""),
+        purpose: String(identity.purpose ?? ""),
+        locale: String(identity.locale ?? "es"),
+        tone: String(identity.tone ?? "profesional"),
+        instructions: String(identity.instructions ?? ""),
+        welcomeMessage: String(identity.welcomeMessage ?? base.identity.welcomeMessage),
+      }),
+      behavior: Object.freeze({
+        ...base.behavior,
+        systemPrompt: String(behavior.systemPrompt ?? ""),
+        restrictions: String(behavior.restrictions ?? ""),
+      }),
+      rag: Object.freeze({
+        ...base.rag,
+        enabled: rag.enabled === true,
+        groundingMode: rag.groundingMode === "private-strict" || rag.groundingMode === "general-allowed" ? rag.groundingMode : "private-preferred",
+        knowledgeBaseIds: Object.freeze(Array.isArray(rag.knowledgeBaseIds) ? rag.knowledgeBaseIds.filter((item): item is string => typeof item === "string") : []),
+        minimumScore: Number(rag.minimumScore ?? base.rag.minimumScore),
+      }),
+      memory: Object.freeze({ ...base.memory, enabled: memory.enabled === true }),
+      tools: Object.freeze({
+        ...base.tools,
+        enabled: tools.enabled === true,
+        allowlist: Object.freeze(Array.isArray(tools.allowlist) ? tools.allowlist.filter((item): item is string => typeof item === "string") : []),
+        maximumCalls: Number(tools.maximumCalls ?? base.tools.maximumCalls),
+        maximumRounds: Number(tools.maximumRounds ?? base.tools.maximumRounds),
+      }),
+      createdAt: String(value.createdAt ?? base.createdAt),
+      updatedAt: String(value.updatedAt ?? base.updatedAt),
+      createdBy: String(value.createdBy ?? base.createdBy),
+      updatedBy: String(value.updatedBy ?? base.updatedBy),
+    });
+    return Object.freeze({ ...mapped, validation: validateStudioAssistant(mapped) });
+  }
+}
+
+class BackendStudioError extends Error {
+  public constructor(readonly status: number) {
+    super(`Backend respondió ${status}.`);
+    this.name = "BackendStudioError";
   }
 }

@@ -27,6 +27,7 @@ import { routeEnterpriseAdmin } from "./admin/routes.js";
 import type { EnterpriseAdminService } from "./admin/contracts.js";
 import type { KnowledgeManagerService } from "@gano-bot/ai-core/knowledge-manager";
 import { routeKnowledgeManager } from "./knowledge-manager/routes.js";
+import { routeStudio, type StudioControlPlane } from "./studio/index.js";
 import type {
   ApiErrorResponse,
   ApiHealth,
@@ -75,6 +76,7 @@ export interface BackendDependencies {
   readonly generateId?: (prefix: string) => string;
   readonly enterpriseAdmin?: EnterpriseAdminService;
   readonly knowledgeManager?: KnowledgeManagerService;
+  readonly studio?: StudioControlPlane;
 }
 const DEFAULT_CONFIG: BackendConfiguration = Object.freeze({
   requestTimeoutMilliseconds: 30000,
@@ -300,6 +302,16 @@ export class BackendApplication {
     const url = new URL(request.url);
     const path = url.pathname;
     const segments = path.split("/").filter(Boolean);
+    if (path.startsWith("/v1/studio/") && this.dependencies.studio !== undefined) {
+      const response = await routeStudio(request, this.dependencies.studio, {
+        principal,
+        now: this.now().toISOString(),
+        readJson: () => this.readJson(request),
+        success: (data, responseStatus) =>
+          this.success(data, requestId, correlationId, responseStatus),
+      });
+      if (response !== undefined) return response;
+    }
     if (path.startsWith("/v1/knowledge-manager") && this.dependencies.knowledgeManager !== undefined) {
       const response = await routeKnowledgeManager(request, this.dependencies.knowledgeManager, { principal, readJson: () => this.readJson(request), success: (data, status) => this.success(data, requestId, correlationId, status) });
       if (response !== undefined) return response;

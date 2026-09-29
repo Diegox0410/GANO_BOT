@@ -34,6 +34,8 @@ import {
   GANO_SIM_INTENT_CONFIG,
   GANO_SIM_PROMPT_CONFIG,
   FirebaseAuthenticationProvider,
+  FirestoreStudioRepository,
+  StudioControlPlane,
 } from "../apps/functions/dist/index.js";
 
 import {
@@ -840,6 +842,20 @@ manager.create({
     ),
   );
 
+  const studio =
+    new StudioControlPlane(
+      new FirestoreStudioRepository(
+        firestore,
+      ),
+      (requestedTenantId, requestedAssistantId) =>
+        registry
+          .list({
+            tenantId: requestedTenantId,
+            assistantId: requestedAssistantId,
+          })
+          .map((tool) => tool.descriptor.id),
+    );
+
   const runtimeGateway =
     new AssistantManagerChatGateway(
       manager,
@@ -868,6 +884,8 @@ manager.create({
           }),
 
         knowledgeManager,
+
+        studio,
 
         authentication:
           new FirebaseAuthenticationProvider(),
