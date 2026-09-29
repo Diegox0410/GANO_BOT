@@ -57,7 +57,6 @@
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.3",
-    "dotenv": "^17.4.2",
-    "firebase-admin": "13.10.0"
+    "dotenv": "^17.4.2"
   }
 }
