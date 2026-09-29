@@ -20,7 +20,7 @@
     "@napi-rs/canvas": "^1.0.3",
     "exceljs": "^4.4.0",
     "mammoth": "^1.10.0",
-    "pdfjs-dist": "^5.4.149"
+    "pdfjs-dist": "^6.2.108"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",
