@@ -36,6 +36,7 @@ import {
   FirebaseAuthenticationProvider,
   FirestoreStudioRepository,
   StudioControlPlane,
+  FirestoreConversationRepository,
 } from "../apps/functions/dist/index.js";
 
 import {
@@ -877,6 +878,11 @@ manager.create({
           }),
 
         assistants,
+
+        conversations:
+          new FirestoreConversationRepository(
+            firestore,
+          ),
 
         tools:
           createToolServices({

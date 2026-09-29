@@ -144,6 +144,28 @@ export interface ConversationApiResource {
   readonly createdAt: string;
   readonly updatedAt: string;
 }
+export interface ConversationRepository {
+  save(value: ConversationApiResource): Promise<void>;
+  get(
+    tenantId: string,
+    assistantId: string,
+    id: string,
+    actorId: string,
+    others?: boolean,
+  ): Promise<ConversationApiResource | undefined>;
+  list(
+    tenantId: string,
+    actorId: string,
+    others?: boolean,
+  ): Promise<readonly ConversationApiResource[]>;
+  delete(
+    tenantId: string,
+    assistantId: string,
+    id: string,
+    actorId: string,
+    others?: boolean,
+  ): Promise<boolean>;
+}
 export interface ChatApiRequest {
   readonly assistantId: string;
   readonly conversationId?: string;

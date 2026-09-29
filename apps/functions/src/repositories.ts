@@ -2,6 +2,7 @@ import { BackendApiError } from "./errors.js";
 import type { AssistantDescriptor } from "@gano-bot/ai-core";
 import type {
   ConversationApiResource,
+  ConversationRepository,
   DocumentApiResource,
   IngestionJobApiResource,
   KnowledgeBaseApiResource,
@@ -23,31 +24,31 @@ export class InMemoryAssistantRepository {
   }
 }
 /** Repositorio volátil exclusivo para desarrollo y pruebas. */
-export class InMemoryConversationRepository {
+export class InMemoryConversationRepository implements ConversationRepository {
   private readonly values = new Map<string, ConversationApiResource>();
-  public save(value: ConversationApiResource): void {
+  public async save(value: ConversationApiResource): Promise<void> {
     this.values.set(
       key(value.tenantId, value.assistantId, value.id),
       Object.freeze({ ...value, messages: Object.freeze([...value.messages]) }),
     );
   }
-  public get(
+  public async get(
     tenantId: string,
     assistantId: string,
     id: string,
     actorId: string,
     others = false,
-  ): ConversationApiResource | undefined {
+  ): Promise<ConversationApiResource | undefined> {
     const value = this.values.get(key(tenantId, assistantId, id));
     return value !== undefined && (others || value.ownerId === actorId)
       ? value
       : undefined;
   }
-  public list(
+  public async list(
     tenantId: string,
     actorId: string,
     others = false,
-  ): readonly ConversationApiResource[] {
+  ): Promise<readonly ConversationApiResource[]> {
     return Object.freeze(
       [...this.values.values()].filter(
         (item) =>
@@ -55,14 +56,14 @@ export class InMemoryConversationRepository {
       ),
     );
   }
-  public delete(
+  public async delete(
     tenantId: string,
     assistantId: string,
     id: string,
     actorId: string,
     others = false,
-  ): boolean {
-    const value = this.get(tenantId, assistantId, id, actorId, others);
+  ): Promise<boolean> {
+    const value = await this.get(tenantId, assistantId, id, actorId, others);
     return value === undefined
       ? false
       : this.values.delete(key(tenantId, assistantId, id));

@@ -37,6 +37,7 @@ import type {
   AuthenticationProvider,
   ChatApiRequest,
   ChatApiResponse,
+  ConversationRepository,
   ChatStreamEvent,
   Logger,
   MetricsSink,
@@ -63,7 +64,7 @@ export interface BackendConfiguration {
 export interface BackendDependencies {
   readonly chat: BackendChatGateway;
   readonly assistants: InMemoryAssistantRepository;
-  readonly conversations?: InMemoryConversationRepository;
+  readonly conversations?: ConversationRepository;
   readonly knowledge?: InMemoryKnowledgeCatalog;
   readonly ingestion?: InMemoryIngestionJobRepository;
   readonly tools?: ToolServices;
@@ -167,7 +168,7 @@ function chatBody(value: unknown): ChatApiRequest {
 }
 export class BackendApplication {
   private readonly config: BackendConfiguration;
-  private readonly conversations: InMemoryConversationRepository;
+  private readonly conversations: ConversationRepository;
   private readonly knowledge: InMemoryKnowledgeCatalog;
   private readonly ingestion: InMemoryIngestionJobRepository;
   private readonly authentication: AuthenticationProvider;
@@ -372,7 +373,7 @@ export class BackendApplication {
     if (path === "/v1/conversations" && request.method === "GET") {
       authorize(principal, "conversations:read", principal.tenantId);
       return this.success(
-        this.conversations.list(
+        await this.conversations.list(
           principal.tenantId,
           principal.actorId,
           principal.roles.includes("tenant-admin"),
@@ -397,7 +398,7 @@ export class BackendApplication {
         createdAt: now,
         updatedAt: now,
       });
-      this.conversations.save(value);
+      await this.conversations.save(value);
       return this.success(value, requestId, correlationId, 201);
     }
     if (segments[1] === "conversations" && segments.length === 3) {
@@ -413,13 +414,13 @@ export class BackendApplication {
       );
       if (request.method === "DELETE") {
         if (
-          !this.conversations.delete(
+          !(await this.conversations.delete(
             principal.tenantId,
             assistantId,
             id,
             principal.actorId,
             principal.roles.includes("tenant-admin"),
-          )
+          ))
         )
           throw new BackendApiError(
             "CONVERSATION_NOT_FOUND",
@@ -429,7 +430,7 @@ export class BackendApplication {
         return this.success({ deleted: true }, requestId, correlationId);
       }
       if (request.method === "GET") {
-        const value = this.conversations.get(
+        const value = await this.conversations.get(
           principal.tenantId,
           assistantId,
           id,
@@ -670,7 +671,7 @@ export class BackendApplication {
     const assistant = this.requireAssistant(principal, body.assistantId);
     const conversationId =
       body.conversationId ?? this.generateId("conversation");
-    const prior = this.conversations.get(
+    const prior = await this.conversations.get(
       principal.tenantId,
       body.assistantId,
       conversationId,
@@ -760,7 +761,7 @@ export class BackendApplication {
       messages = Object.freeze(
         messages.slice(-this.config.maximumConversationMessages),
       );
-    this.conversations.save({
+    await this.conversations.save({
       id: conversationId,
       tenantId: principal.tenantId,
       assistantId: body.assistantId,
