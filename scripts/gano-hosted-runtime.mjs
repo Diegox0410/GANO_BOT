@@ -38,6 +38,7 @@ import {
   StudioControlPlane,
   FirestoreConversationRepository,
   FirestoreRequestAuditSink,
+  FirestoreRateLimiter,
 } from "../apps/functions/dist/index.js";
 
 import {
@@ -887,6 +888,11 @@ manager.create({
 
         audit:
           new FirestoreRequestAuditSink(
+            firestore,
+          ),
+
+        rateLimiter:
+          new FirestoreRateLimiter(
             firestore,
           ),
 

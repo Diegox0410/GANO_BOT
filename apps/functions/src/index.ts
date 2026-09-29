@@ -14,6 +14,7 @@ export * from "./integrations/ganoSimAssistantProfile.js";
 export * from "./integrations/firebaseAuthentication.js";
 export * from "./integrations/firestoreConversationRepository.js";
 export * from "./integrations/firestoreRequestAuditSink.js";
+export * from "./integrations/firestoreRateLimiter.js";
 export * from "./commerce/index.js";
 export * from "./studio/index.js";
 export * from "./auditor/index.js";
