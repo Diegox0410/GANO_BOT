@@ -188,13 +188,29 @@ export class RedactingLogger {
     message: string,
     metadata: Readonly<Record<string, string | number | boolean | null>>,
   ): void {
-    const safe = Object.fromEntries(
-      Object.entries(metadata).filter(
-        ([name]) => !/(token|secret|key|content|prompt)/i.test(name),
-      ),
-    );
+    const safe = redactLogMetadata(metadata);
     this.entries.push(
       Object.freeze({ level, message, metadata: Object.freeze(safe) }),
     );
   }
+}
+
+const SENSITIVE_NAME = /(authorization|bearer|token|secret|api[-_]?key|private[-_]?key|password|cookie|content|prompt|payment[-_]?proof)/i;
+const SENSITIVE_VALUE = /^(bearer\s+|dev:)|-----BEGIN [A-Z ]+PRIVATE KEY-----/i;
+
+export function redactLogMetadata(
+  metadata: Readonly<Record<string, string | number | boolean | null>>,
+): Readonly<Record<string, string | number | boolean | null>> {
+  return Object.freeze(
+    Object.fromEntries(
+      Object.entries(metadata)
+        .filter(([name]) => !SENSITIVE_NAME.test(name))
+        .map(([name, value]) => [
+          name,
+          typeof value === "string" && SENSITIVE_VALUE.test(value.trim())
+            ? "[REDACTED]"
+            : value,
+        ]),
+    ),
+  );
 }

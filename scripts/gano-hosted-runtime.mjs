@@ -37,6 +37,7 @@ import {
   FirestoreStudioRepository,
   StudioControlPlane,
   FirestoreConversationRepository,
+  FirestoreRequestAuditSink,
 } from "../apps/functions/dist/index.js";
 
 import {
@@ -881,6 +882,11 @@ manager.create({
 
         conversations:
           new FirestoreConversationRepository(
+            firestore,
+          ),
+
+        audit:
+          new FirestoreRequestAuditSink(
             firestore,
           ),
 

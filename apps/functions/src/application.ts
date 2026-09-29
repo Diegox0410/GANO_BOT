@@ -277,6 +277,11 @@ export class BackendApplication {
       this.logger.log(status >= 500 ? "error" : "info", "api.request", {
         requestId,
         correlationId,
+        endpoint: new URL(request.url).pathname,
+        method: request.method,
+        ...(principal !== undefined
+          ? { tenantId: principal.tenantId, actorId: principal.actorId }
+          : {}),
         status,
         duration,
       });
