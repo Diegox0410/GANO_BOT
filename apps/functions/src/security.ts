@@ -10,7 +10,7 @@ import type {
   RateLimitResult,
   TokenVerifier,
 } from "./contracts.js";
-const ADMIN: readonly ApiPermission[] = Object.freeze([
+export const PLATFORM_ADMIN_PERMISSIONS: readonly ApiPermission[] = Object.freeze([
   "platform:read",
   "platform:write",
   "platform:admin",
@@ -55,6 +55,14 @@ const ADMIN: readonly ApiPermission[] = Object.freeze([
   "security:read",
   "security:update",
 ]);
+export const TENANT_ADMIN_PERMISSIONS: readonly ApiPermission[] = Object.freeze(
+  PLATFORM_ADMIN_PERMISSIONS.filter(
+    (permission) =>
+      !permission.startsWith("platform:") &&
+      permission !== "tenants:create" &&
+      permission !== "tenants:archive",
+  ),
+);
 export class DevelopmentTokenVerifier implements TokenVerifier {
   public async verify(token: string): Promise<ApiPrincipal | undefined> {
     if (!token.startsWith("dev:")) return undefined;
@@ -74,7 +82,9 @@ export class DevelopmentTokenVerifier implements TokenVerifier {
           ? "tenant-admin"
           : "user";
     const permissions: readonly ApiPermission[] = admin
-      ? ADMIN
+      ? resolvedRole === "platform-admin"
+        ? PLATFORM_ADMIN_PERMISSIONS
+        : TENANT_ADMIN_PERMISSIONS
       : Object.freeze([
           "assistants:read",
           "conversations:read",

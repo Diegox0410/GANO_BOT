@@ -56,6 +56,8 @@ export interface BackendConfiguration {
   readonly maximumToolMilliseconds: number;
   readonly maximumConversationMessages: number;
   readonly streamingEnabled: boolean;
+  /** Solo para procesos locales y tests que aceptan deliberadamente tokens dev:. */
+  readonly allowDevelopmentAuthentication: boolean;
 }
 export interface BackendDependencies {
   readonly chat: BackendChatGateway;
@@ -85,6 +87,7 @@ const DEFAULT_CONFIG: BackendConfiguration = Object.freeze({
   maximumToolMilliseconds: 10000,
   maximumConversationMessages: 100,
   streamingEnabled: true,
+  allowDevelopmentAuthentication: false,
 });
 function validId(value: string | null): string | undefined {
   if (value === null) return undefined;
@@ -189,6 +192,14 @@ export class BackendApplication {
     this.knowledge = dependencies.knowledge ?? new InMemoryKnowledgeCatalog();
     this.ingestion =
       dependencies.ingestion ?? new InMemoryIngestionJobRepository();
+    if (
+      dependencies.authentication === undefined &&
+      !this.config.allowDevelopmentAuthentication
+    ) {
+      throw new Error(
+        "AuthenticationProvider is required. Development authentication must be explicitly enabled.",
+      );
+    }
     this.authentication =
       dependencies.authentication ?? new DevelopmentAuthenticationProvider();
     this.rateLimiter = dependencies.rateLimiter ?? new InMemoryRateLimiter();

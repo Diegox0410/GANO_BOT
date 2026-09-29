@@ -44,7 +44,10 @@ const app = createBackendApplication(
     assistants: new InMemoryAssistantRepository(),
     knowledgeManager: manager,
   },
-  { maximumBodyBytes: 60 * 1024 * 1024 },
+  {
+    maximumBodyBytes: 60 * 1024 * 1024,
+    allowDevelopmentAuthentication: true,
+  },
 );
 const headers = {
   authorization: "Bearer dev:tenant-http:actor-http:tenant-admin",

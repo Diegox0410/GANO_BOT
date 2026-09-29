@@ -162,6 +162,7 @@ const app = createBackendApplication(
     ),
   },
   {
+    allowDevelopmentAuthentication: true,
     rateLimit: { limit: 50, windowMilliseconds: 60000 },
     allowedOrigins: Object.freeze(["https://allowed.example"]),
   },

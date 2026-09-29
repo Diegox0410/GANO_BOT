@@ -11,6 +11,7 @@ export * from "./integrations/ganoKnowledgePlan.js";
 export * from "./integrations/ganoKnowledgeCandidateSource.js";
 export * from "./integrations/ganoKnowledgeRuntime.js";
 export * from "./integrations/ganoSimAssistantProfile.js";
+export * from "./integrations/firebaseAuthentication.js";
 export * from "./commerce/index.js";
 export * from "./studio/index.js";
 export * from "./auditor/index.js";

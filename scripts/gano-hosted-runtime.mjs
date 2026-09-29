@@ -33,6 +33,7 @@ import {
   createGanoSimAffiliateProfileTool,
   GANO_SIM_INTENT_CONFIG,
   GANO_SIM_PROMPT_CONFIG,
+  FirebaseAuthenticationProvider,
 } from "../apps/functions/dist/index.js";
 
 import {
@@ -867,6 +868,9 @@ manager.create({
           }),
 
         knowledgeManager,
+
+        authentication:
+          new FirebaseAuthenticationProvider(),
       },
       {
         maximumBodyBytes:
