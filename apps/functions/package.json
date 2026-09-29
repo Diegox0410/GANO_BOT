@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false",
-    "test": "npm run build && node dist/tests/backend.test.js && node dist/tests/firebaseAuthentication.test.js && node dist/tests/firestoreConversationRepository.test.js && node dist/tests/firestoreRateLimiter.test.js && node dist/tests/observability.test.js && node dist/tests/knowledge-manager.test.js && node dist/tests/commerce.test.js && node dist/tests/chopifyHttpAdapter.test.js && node dist/tests/commerceRuntime.test.js && node dist/tests/supervisorCommerce.test.js && node dist/tests/identityCommerce.test.js && node dist/tests/studio.test.js && node dist/tests/auditor.test.js"
+    "test": "npm run build && node dist/tests/backend.test.js && node dist/tests/firebaseAuthentication.test.js && node dist/tests/firestoreConversationRepository.test.js && node dist/tests/firestoreRateLimiter.test.js && node dist/tests/observability.test.js && node dist/tests/knowledge-manager.test.js && node dist/tests/commerce.test.js && node dist/tests/chopifyHttpAdapter.test.js && node dist/tests/commerceRuntime.test.js && node dist/tests/supervisorCommerce.test.js && node dist/tests/identityCommerce.test.js && node dist/tests/studio.test.js && node dist/tests/auditor.test.js && node dist/tests/productionLikeCommerceE2E.test.js"
   },
   "dependencies": {
     "@gano-bot/ai-core": "0.1.0",
