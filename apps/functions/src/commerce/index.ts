@@ -5,3 +5,5 @@ export * from "./chopifyHttpAdapter.js";
 export * from "./runtime.js";
 export * from "./supervisor.js";
 export * from "./supervisorTools.js";
+export * from "./identity.js";
+export * from "./identityTools.js";
