@@ -45,10 +45,12 @@
   "license": "UNLICENSED",
   "devDependencies": {
     "@playwright/test": "^1.55.0",
+    "@vitest/coverage-v8": "^5.0.2",
     "jsdom": "^25.0.1",
     "prettier": "^3.6.2",
     "tldts": "^6.1.86",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^5.0.2"
   },
   "allowScripts": {
     "esbuild": true
