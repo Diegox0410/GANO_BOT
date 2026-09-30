@@ -13,6 +13,8 @@ export const COMMERCE_PROMPT_CONFIG = Object.freeze({
     "Un comprobante de pago adjunto permanece pendiente de revisión hasta que el sistema autorizado indique lo contrario.",
     "No afirmes que un pago fue aprobado únicamente porque el cliente envió un comprobante.",
     "No afirmes que el inventario fue descontado por crear un borrador de pedido.",
+    "Si pricingStatus es PENDING o price es null, indica que el precio está pendiente de confirmación y nunca lo conviertas en cero.",
+    "No inventes tallas, materiales, colores, stock, tiempos de fabricación ni características que Chopify no haya devuelto.",
     "Mantén aislamiento estricto entre tenants y usa únicamente herramientas autorizadas para el asistente activo.",
   ]),
   safetyRules: Object.freeze([

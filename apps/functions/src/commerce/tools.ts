@@ -115,7 +115,7 @@ export function createCommerceTools(
     {
       descriptor: descriptor(
         COMMERCE_TOOL_IDS.getProductDetails,
-        "Obtiene detalles y precio vigente de un producto real.",
+        "Obtiene detalles, variantes y pricing vigente o pendiente de un producto real.",
         tenantId,
         assistantId,
         Object.freeze({

@@ -21,10 +21,13 @@ export interface CommerceProductSummary {
   readonly name: string;
   readonly sku?: string;
   readonly description?: string;
-  readonly price: CommerceMoney;
+  readonly price: CommerceMoney | null;
+  readonly pricingStatus: "PENDING" | "READY";
   readonly available: boolean;
   readonly imageUrl?: string;
+  readonly images?: readonly CommerceProductImage[];
   readonly category?: string;
+  readonly fulfillmentMode?: string;
 }
 
 export interface CommerceProductDetails extends CommerceProductSummary {
@@ -36,10 +39,16 @@ export interface CommerceProductVariant {
   readonly variantId: string;
   readonly name: string;
   readonly sku?: string;
-  readonly price?: CommerceMoney;
+  readonly color?: string | null;
+  readonly price?: CommerceMoney | null;
+  readonly pricingStatus?: "PENDING" | "READY";
   readonly available: boolean;
   readonly availableQuantity?: number;
+  readonly images?: readonly CommerceProductImage[];
+  readonly fulfillmentMode?: string;
 }
+
+export interface CommerceProductImage { readonly url: string; readonly alt: string }
 
 export interface CommerceAvailability {
   readonly productId: string;

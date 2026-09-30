@@ -13,11 +13,11 @@ const calls: Array<{ name: string; context: CommerceRequestContext; input: unkno
 const port: CommercePort = {
   async searchProducts(context, input) {
     calls.push({ name: "searchProducts", context, input });
-    return Object.freeze([{ productId: "p1", name: "Producto", price: { amount: 10, currency: "USD" }, available: true }]);
+    return Object.freeze([{ productId: "p1", name: "Producto", price: { amount: 10, currency: "USD" }, pricingStatus: "READY" as const, available: true }]);
   },
   async getProductDetails(context, input) {
     calls.push({ name: "getProductDetails", context, input });
-    return { productId: input.productId, name: "Producto", price: { amount: 10, currency: "USD" }, available: true };
+    return { productId: input.productId, name: "Producto", price: { amount: 10, currency: "USD" }, pricingStatus: "READY" as const, available: true };
   },
   async checkAvailability(context, input) {
     calls.push({ name: "checkAvailability", context, input });
@@ -124,5 +124,14 @@ const draft = await order.handler.execute(
   },
 );
 assert.equal((draft as { status: string }).status, "draft");
+
+const pendingPort: CommercePort = {
+  ...port,
+  async searchProducts() { return Object.freeze([{ productId: "floes-pending", name: "Scrub María José", price: null, pricingStatus: "PENDING" as const, available: true, category: "Scrubs con Detalles", fulfillmentMode: "MADE_TO_ORDER" }]); },
+};
+const pendingSearch = createCommerceTools(pendingPort, "tenant-floes", "commerce-assistant").find((tool) => tool.descriptor.id === COMMERCE_TOOL_IDS.searchProducts);
+assert.ok(pendingSearch);
+const pendingResult = await pendingSearch.handler.execute({ query: "Scrub María José" }, { tenantId: "tenant-floes", assistantId: "commerce-assistant", actorId: "customer-1", conversationId: "conv-pending", requestId: "req-pending", correlationId: "corr-pending", roles: ["user"], permissions: ["tools:execute"], allowedToolIds: [COMMERCE_TOOL_IDS.searchProducts], allowedCategories: ["business"], maximumRiskLevel: "safe" });
+assert.deepEqual(pendingResult, [{ productId: "floes-pending", name: "Scrub María José", price: null, pricingStatus: "PENDING", available: true, category: "Scrubs con Detalles", fulfillmentMode: "MADE_TO_ORDER" }]);
 
 console.log("Commerce H2: contratos, aislamiento, idempotencia y PaymentProof pendiente OK");

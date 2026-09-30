@@ -87,9 +87,16 @@ function commerceToolCall(message) {
     };
   }
 
+  let query = message;
+  if (/no (?:sea|se vea|tan) (?:tan )?b[aá]sico|m[aá]s diferenciad/i.test(message)) query = "Scrubs con Detalles";
+  else if (/chaqueta/i.test(message)) query = "Chaqueta María José";
+  else if (/mar[ií]a bel[eé]n/i.test(message)) query = "Scrub María Belén";
+  else if (/mar[ií]a jos[eé]/i.test(message)) query = "Scrub María José";
+  else if (/esencial|colores?/i.test(message)) query = "Scrub Esencial";
+
   return {
     name: "commerce.searchProducts",
-    arguments: { query: requestsCatalog ? "" : message, limit: 5 },
+    arguments: { query: requestsCatalog ? "" : query, limit: 5 },
   };
 }
 
@@ -102,10 +109,13 @@ function commerceResultText(result) {
     const lines = result.map((item) => {
       const record = item && typeof item === "object" ? item : {};
       const price = record.price && typeof record.price === "object" ? record.price : {};
-      const amount = typeof price.amount === "number" ? price.amount.toFixed(2) : "sin precio";
-      const currency = typeof price.currency === "string" ? price.currency : "";
-      const availability = record.available === true ? "disponible" : "no disponible";
-      return `- ${String(record.name ?? record.productId ?? "Producto")}: ${amount} ${currency} (${availability}; id ${String(record.productId ?? "no disponible")})`;
+      const hasPrice = typeof price.amount === "number" && record.pricingStatus !== "PENDING";
+      const pricing = hasPrice ? `${price.amount.toFixed(2)} ${typeof price.currency === "string" ? price.currency : ""}` : "precio pendiente de confirmación";
+      const variants = Array.isArray(record.variants) ? record.variants : [];
+      const colors = variants.map((variant) => variant && typeof variant === "object" ? variant.color : undefined).filter((color) => typeof color === "string");
+      const category = typeof record.category === "string" ? ` · ${record.category}` : "";
+      const colorText = colors.length > 0 ? ` · colores: ${colors.join(", ")}` : "";
+      return `- ${String(record.name ?? record.productId ?? "Producto")}${category}: ${pricing}${colorText} (id ${String(record.productId ?? "no disponible")})`;
     });
 
     return `Estos son los datos vigentes devueltos por Chopify:\n${lines.join("\n")}`;
