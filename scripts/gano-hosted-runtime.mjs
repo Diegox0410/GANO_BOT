@@ -53,6 +53,16 @@ const tenantId = "gano-sim";
 const assistantId = "gano-assistant";
 const commerceTenantId = "tenant-floes";
 
+class LiveProcessingError extends Error {
+  constructor(stage, status, safeMessage) {
+    super(safeMessage);
+    this.name = "LiveProcessingError";
+    this.stage = stage;
+    this.status = status;
+    this.safeMessage = safeMessage;
+  }
+}
+
 function createAssistantMessage(content, createdAt) {
   return Object.freeze({
     id: `message-${crypto.randomUUID()}`,
@@ -1293,9 +1303,19 @@ manager.create({
         ),
       );
 
-    if (!identityResponse.ok) {
-      throw new Error(
-        `WhatsApp identity resolution failed (${identityResponse.status}).`,
+    const identityPayload =
+      await identityResponse.json();
+    const identityResult =
+      identityPayload?.data;
+
+    if (
+      !identityResponse.ok ||
+      identityResult?.status !== "completed"
+    ) {
+      throw new LiveProcessingError(
+        "resolve-customer-identity",
+        identityResponse.status,
+        `Identity tool ended with ${String(identityResult?.status ?? "invalid-response")}.`,
       );
     }
 
@@ -1327,8 +1347,10 @@ manager.create({
       );
 
     if (!chatResponse.ok) {
-      throw new Error(
-        `Commerce assistant failed (${chatResponse.status}).`,
+      throw new LiveProcessingError(
+        "commerce-assistant",
+        chatResponse.status,
+        "Commerce assistant request failed.",
       );
     }
 
@@ -1341,8 +1363,10 @@ manager.create({
       typeof reply !== "string" ||
       !reply.trim()
     ) {
-      throw new Error(
-        "Commerce assistant returned no reply.",
+      throw new LiveProcessingError(
+        "response-validation",
+        502,
+        "Commerce assistant returned an invalid reply.",
       );
     }
 

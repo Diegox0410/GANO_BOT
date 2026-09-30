@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { createLiveHandler, validateLivePayload } from "../api/live.mjs";
+import { createLiveHandler, describeLiveError, validateLivePayload } from "../api/live.mjs";
 
 const TOKEN = "test-live-token-with-enough-entropy";
 const VALID_BODY = Object.freeze({
@@ -93,6 +93,23 @@ test("no filtra secretos cuando el runtime falla", async () => {
   const observable = JSON.stringify({ payload: result.payload, logs });
   assert.equal(result.status, 503);
   assert.equal(observable.includes(leakedSecret), false);
+  assert.deepEqual(logs, ["[GANO_BOT Live] request-failed"]);
+});
+
+test("el logging conserva etapa y status solo mediante campos seguros", () => {
+  const error = new Error("Bearer secret-value");
+  Object.assign(error, {
+    stage: "resolve-customer-identity",
+    status: 401,
+    safeMessage: "Identity tool ended with failed.",
+  });
+  assert.deepEqual(describeLiveError(error, "commerce-processing"), {
+    stage: "resolve-customer-identity",
+    status: 401,
+    name: "Error",
+    message: "Identity tool ended with failed.",
+  });
+  assert.equal(JSON.stringify(describeLiveError(new Error("secret-value"), "runtime-initialization")).includes("secret-value"), false);
 });
 
 test("la validación no acepta privilegios declarados por el cliente", () => {

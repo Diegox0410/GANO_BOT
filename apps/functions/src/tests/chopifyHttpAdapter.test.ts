@@ -7,4 +7,9 @@ const context={tenantId:'tenant-floes',assistantId:'commerce-assistant',actorId:
 const proof=await adapter.attachPaymentProof(context,{orderId:'order-1',proofUrl:'https://files.example/proof'});
 assert.equal(proof.status,'pending_review');assert.equal(calls.length,1);assert.equal(calls[0]?.url,'https://chopify.example/api/commerce');const headers=new Headers(calls[0]?.init.headers);assert.equal(headers.get('x-chopify-tenant-id'),'tenant-floes');assert.equal(headers.get('x-request-id'),'req-1');assert.equal(headers.get('x-correlation-id'),'corr-1');const body=JSON.parse(String(calls[0]?.init.body));assert.equal(body.tenantId,undefined);assert.equal(body.idempotencyKey,'idem-1');assert.equal(body.operation,'attachPaymentProof');
 assert.throws(()=>new ChopifyHttpAdapter({baseUrl:'http://unsafe.example',bearerToken:'x'}),/HTTPS/);
+const logs:unknown[][]=[];
+const unauthorized=new ChopifyHttpAdapter({baseUrl:'https://chopify.example',bearerToken:'never-log-this',logger:{error(...values:unknown[]){logs.push(values)}},fetchImpl:async()=>new Response(JSON.stringify({ok:false,error:'Unauthorized'}),{status:401,headers:{'content-type':'application/json'}})});
+await assert.rejects(()=>unauthorized.searchProducts(context,{query:''}),/Unauthorized/);
+assert.equal(JSON.stringify(logs).includes('never-log-this'),false);
+assert.deepEqual(logs,[['[Chopify Commerce] request-failed',{operation:'searchProducts',status:401,name:'ChopifyHttpError',message:'Chopify rejected commerce credentials.'}]]);
 console.log('Chopify HTTP Adapter H3: HTTPS, tenant header, correlación, idempotencia y PaymentProof pendiente OK');

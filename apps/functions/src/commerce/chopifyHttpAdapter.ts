@@ -7,16 +7,16 @@ import type {
 import type { CommerceEscalationInput, CommerceEscalationResult, CommerceSupervisorPort } from './supervisor.js'
 import type { CommerceIdentityPort, CommerceResolveIdentityInput, CommerceResolvedIdentity } from './identity.js'
 
-export interface ChopifyHttpAdapterConfig { readonly baseUrl:string; readonly bearerToken:string; readonly timeoutMs?:number; readonly fetchImpl?:typeof fetch }
+export interface ChopifyHttpAdapterConfig { readonly baseUrl:string; readonly bearerToken:string; readonly timeoutMs?:number; readonly fetchImpl?:typeof fetch; readonly logger?:Pick<Console,'error'> }
 interface Envelope<T>{ok:boolean;data?:T;error?:string}
 export class ChopifyHttpError extends Error { constructor(readonly status:number,message:string){super(message);this.name='ChopifyHttpError'} }
 
 export class ChopifyHttpAdapter implements CommercePort,CommerceSupervisorPort,CommerceIdentityPort {
- private readonly fetchImpl:typeof fetch; private readonly timeoutMs:number
+ private readonly fetchImpl:typeof fetch; private readonly timeoutMs:number; private readonly logger:Pick<Console,'error'>
  constructor(private readonly config:ChopifyHttpAdapterConfig){
   if(!/^https:\/\//i.test(config.baseUrl))throw new Error('Chopify baseUrl must use HTTPS')
   if(!config.bearerToken.trim())throw new Error('Chopify bearer token is required')
-  this.fetchImpl=config.fetchImpl??fetch;this.timeoutMs=config.timeoutMs??8000
+  this.fetchImpl=config.fetchImpl??fetch;this.timeoutMs=config.timeoutMs??8000;this.logger=config.logger??console
  }
  private async call<T>(context:CommerceRequestContext,operation:string,input:unknown):Promise<T>{
   const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),this.timeoutMs);const abort=()=>controller.abort()
@@ -27,7 +27,11 @@ export class ChopifyHttpAdapter implements CommercePort,CommerceSupervisorPort,C
     body:JSON.stringify({operation,input,idempotencyKey:context.idempotencyKey}),signal:controller.signal,
    })
    const body=await response.json().catch(()=>({ok:false,error:'Invalid JSON from Chopify'})) as Envelope<T>
-   if(!response.ok||!body.ok)throw new ChopifyHttpError(response.status,body.error??`Chopify request failed (${response.status})`)
+   if(!response.ok||!body.ok){
+    const error=new ChopifyHttpError(response.status,body.error??`Chopify request failed (${response.status})`)
+    this.logger.error('[Chopify Commerce] request-failed',Object.freeze({operation,status:response.status,name:error.name,message:response.status===401?'Chopify rejected commerce credentials.':'Chopify commerce request failed.'}))
+    throw error
+   }
    return body.data as T
   }finally{clearTimeout(timer);context.signal?.removeEventListener('abort',abort)}
  }

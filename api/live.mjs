@@ -48,6 +48,32 @@ function authorized(request, expected) {
   return supplied.length === wanted.length && timingSafeEqual(supplied, wanted);
 }
 
+export function describeLiveError(error, fallbackStage) {
+  const value = record(error);
+  const stage =
+    typeof value?.stage === "string" && /^[a-z][a-z0-9-]{1,63}$/.test(value.stage)
+      ? value.stage
+      : fallbackStage;
+  const status =
+    typeof value?.status === "number" && Number.isInteger(value.status)
+      ? value.status
+      : undefined;
+  const name =
+    error instanceof Error && /^[A-Za-z][A-Za-z0-9]{0,63}$/.test(error.name)
+      ? error.name
+      : "Error";
+  const message =
+    typeof value?.safeMessage === "string" && value.safeMessage.length <= 160
+      ? value.safeMessage
+      : "Unexpected live runtime failure.";
+  return Object.freeze({
+    stage,
+    ...(status !== undefined ? { status } : {}),
+    name,
+    message,
+  });
+}
+
 export function validateLivePayload(value) {
   const body = record(value);
   const customer = record(body?.customer);
@@ -102,6 +128,7 @@ export function createLiveHandler({
       return;
     }
 
+    let stage = "request-validation";
     try {
       const validation = validateLivePayload(readBody(request));
       if (validation.value === undefined) {
@@ -111,7 +138,9 @@ export function createLiveHandler({
         return;
       }
 
+      stage = "runtime-initialization";
       const runtime = await runtimeFactory();
+      stage = "commerce-processing";
       const result = await runtime.processLiveWhatsApp(validation.value);
       if (typeof result?.reply !== "string" || !result.reply.trim() || result.reply.length > 4000) {
         throw new Error("invalid-live-reply");
@@ -126,7 +155,10 @@ export function createLiveHandler({
         json(response, 413, { error: { code: "PAYLOAD_TOO_LARGE", message: "Payload too large." } });
         return;
       }
-      logger.error("[GANO_BOT Live] request-failed");
+      logger.error(
+        "[GANO_BOT Live] request-failed",
+        describeLiveError(error, stage),
+      );
       json(response, 503, { error: { code: "LIVE_UNAVAILABLE", message: "Live assistant unavailable." } });
     }
   };
