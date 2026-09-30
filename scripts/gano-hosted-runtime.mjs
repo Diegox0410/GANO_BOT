@@ -1,4 +1,5 @@
 import { AIChatProviderRegistry } from "../packages/ai-core/dist/chat/registry.js";
+import { createHash } from "node:crypto";
 
 import {
   KnowledgeManagerService,
@@ -39,6 +40,9 @@ import {
   FirestoreConversationRepository,
   FirestoreRequestAuditSink,
   FirestoreRateLimiter,
+  COMMERCE_ASSISTANT_ID,
+  COMMERCE_PROMPT_CONFIG,
+  createCommerceRuntimeFromEnv,
 } from "../apps/functions/dist/index.js";
 
 import {
@@ -47,6 +51,78 @@ import {
 
 const tenantId = "gano-sim";
 const assistantId = "gano-assistant";
+const commerceTenantId = "tenant-floes";
+
+function createAssistantMessage(content, createdAt) {
+  return Object.freeze({
+    id: `message-${crypto.randomUUID()}`,
+    role: "assistant",
+    content,
+    contentType: "text",
+    status: "completed",
+    createdAt,
+    updatedAt: createdAt,
+  });
+}
+
+function commerceToolCall(message) {
+  const productMatch = message.match(/\b(?:producto|productId)\s*[:=]?\s*([\w.-]+)/i);
+  const orderMatch = message.match(/\b(?:pedido|orderId)\s*[:=]?\s*([\w.-]+)/i);
+  const quantityMatch = message.match(/\b(?:cantidad|quantity)\s*[:=]?\s*(\d+)/i);
+  const requestsCatalog =
+    /\b(?:productos?|cat[aá]logo)\b/i.test(message) &&
+    /\b(?:disponibles?|tienen|ofrecen|venden|mostrar|muestra|listar|lista|cu[aá]les|qu[eé])\b/i.test(message);
+
+  if (/\b(?:estado|status)\b/i.test(message) && orderMatch) {
+    return { name: "commerce.getOrderStatus", arguments: { orderId: orderMatch[1] } };
+  }
+
+  if (/\b(?:disponibilidad|stock|available)\b/i.test(message) && productMatch) {
+    return {
+      name: "commerce.checkAvailability",
+      arguments: {
+        productId: productMatch[1],
+        ...(quantityMatch ? { quantity: Number(quantityMatch[1]) } : {}),
+      },
+    };
+  }
+
+  return {
+    name: "commerce.searchProducts",
+    arguments: { query: requestsCatalog ? "" : message, limit: 5 },
+  };
+}
+
+function commerceResultText(result) {
+  if (Array.isArray(result)) {
+    if (result.length === 0) {
+      return "No encontré productos coincidentes en el catálogo autorizado de Chopify.";
+    }
+
+    const lines = result.map((item) => {
+      const record = item && typeof item === "object" ? item : {};
+      const price = record.price && typeof record.price === "object" ? record.price : {};
+      const amount = typeof price.amount === "number" ? price.amount.toFixed(2) : "sin precio";
+      const currency = typeof price.currency === "string" ? price.currency : "";
+      const availability = record.available === true ? "disponible" : "no disponible";
+      return `- ${String(record.name ?? record.productId ?? "Producto")}: ${amount} ${currency} (${availability}; id ${String(record.productId ?? "no disponible")})`;
+    });
+
+    return `Estos son los datos vigentes devueltos por Chopify:\n${lines.join("\n")}`;
+  }
+
+  if (result && typeof result === "object") {
+    const record = result;
+    if (typeof record.orderId === "string") {
+      return `Chopify reporta el pedido ${record.orderId} con estado ${String(record.status ?? "no disponible")}, pago ${String(record.paymentStatus ?? "no disponible")} y preparación ${String(record.fulfillmentStatus ?? "no disponible")}.`;
+    }
+    if (typeof record.productId === "string" && typeof record.available === "boolean") {
+      return `Chopify reporta ${record.available ? "disponibilidad" : "falta de disponibilidad"} para ${record.productId}${typeof record.availableQuantity === "number" ? ` (cantidad disponible: ${record.availableQuantity})` : ""}.`;
+    }
+  }
+
+  return "Chopify completó la consulta comercial. No se infirieron datos adicionales.";
+}
 
 const knowledgePermissions = Object.freeze([
   "knowledge:read",
@@ -322,6 +398,11 @@ async function createHostedRuntime() {
 
   const firestore =
     getGanoAdminFirestore();
+
+  const commerceRuntime =
+    createCommerceRuntimeFromEnv(
+      commerceTenantId,
+    );
 
   const knowledgeRepository =
     new FirestoreKnowledgeManagerRepository(
@@ -715,9 +796,112 @@ const knowledgeProcessor =
       },
     });
 
+  const commerceProvider =
+    Object.freeze({
+      name: "development",
+
+      descriptor:
+        Object.freeze({
+          id:
+            "floes-commerce-deterministic",
+
+          name: "development",
+
+          displayName:
+            "FLOES Commerce Deterministic Provider",
+
+          defaultModel:
+            "commerce-grounded-v1",
+
+          enabled: true,
+
+          capabilities:
+            Object.freeze({
+              supportsStreaming: false,
+              supportsTools: true,
+              supportsJson: false,
+              supportsMultimodal: false,
+              supportsSeed: true,
+            }),
+        }),
+
+      async generate(request) {
+        const createdAt = now();
+        const lastToolMessage =
+          request.messages.findLast(
+            (message) =>
+              message.role === "tool",
+          );
+
+        let content;
+        let toolCalls = Object.freeze([]);
+
+        if (lastToolMessage !== undefined) {
+          let result;
+          try {
+            result = JSON.parse(
+              lastToolMessage.content,
+            );
+          } catch {
+            result = undefined;
+          }
+          content = commerceResultText(result);
+        } else {
+          const userMessage =
+            request.messages.findLast(
+              (message) =>
+                message.role === "user",
+            )?.content ?? "";
+          const call =
+            commerceToolCall(
+              userMessage,
+            );
+          content =
+            "Consultando la fuente comercial autorizada…";
+          toolCalls = Object.freeze([
+            Object.freeze({
+              id:
+                `call-${crypto.randomUUID()}`,
+              name: call.name,
+              arguments:
+                Object.freeze(call.arguments),
+            }),
+          ]);
+        }
+
+        const message =
+          createAssistantMessage(
+            content,
+            createdAt,
+          );
+
+        return Object.freeze({
+          id:
+            `response-${crypto.randomUUID()}`,
+          requestId:
+            request.requestId,
+          provider:
+            "development",
+          model:
+            "commerce-grounded-v1",
+          content,
+          message,
+          toolCalls,
+          finishReason:
+            toolCalls.length > 0
+              ? "tool_calls"
+              : "stop",
+          createdAt,
+        });
+      },
+    });
+
   const chatProviders =
     new AIChatProviderRegistry({
-      providers: [provider],
+      providers: [
+        provider,
+        commerceProvider,
+      ],
 
       defaultProviderId:
         provider.descriptor.id,
@@ -804,11 +988,81 @@ manager.create({
     }),
 });
 
+  const commerceDescriptor =
+    Object.freeze({
+      id: COMMERCE_ASSISTANT_ID,
+      tenantId:
+        commerceTenantId,
+      name:
+        "FLOES Commerce Assistant",
+      description:
+        "Asistente comercial conectado server-to-server con Chopify.",
+      version: "1.0.0",
+      locale: "es",
+      enabled: true,
+      capabilities:
+        Object.freeze({
+          conversation: true,
+          intentDetection: true,
+          contextBuilding: true,
+          promptBuilding: true,
+          responseValidation: true,
+          chatFallback: false,
+          embeddings: false,
+          memory: false,
+          knowledge: false,
+          tools: true,
+          streaming: false,
+        }),
+    });
+
+  const commerceToolDefinitions =
+    Object.freeze(
+      commerceRuntime.tools.map(
+        (tool) =>
+          Object.freeze({
+            name:
+              tool.descriptor.id,
+            description:
+              tool.descriptor.description,
+            parameters:
+              tool.descriptor.inputSchema,
+          }),
+      ),
+    );
+
+  manager.create({
+    definition:
+      Object.freeze({
+        descriptor:
+          commerceDescriptor,
+        configuration:
+          Object.freeze({
+            primaryChatProviderId:
+              commerceProvider.descriptor.id,
+            prompt:
+              COMMERCE_PROMPT_CONFIG,
+            tools:
+              commerceToolDefinitions,
+            persistMessages: true,
+            rejectInvalidResponse: true,
+          }),
+      }),
+    dependencies:
+      Object.freeze({
+        chatProviders,
+      }),
+  });
+
   const assistants =
     new InMemoryAssistantRepository();
 
   assistants.register(
     descriptor,
+  );
+
+  assistants.register(
+    commerceDescriptor,
   );
 
   const profileProvider =
@@ -845,6 +1099,12 @@ manager.create({
     ),
   );
 
+  for (const tool of commerceRuntime.tools) {
+    registry.register(
+      tool,
+    );
+  }
+
   const studio =
     new StudioControlPlane(
       new FirestoreStudioRepository(
@@ -864,47 +1124,47 @@ manager.create({
       manager,
     );
 
+  const conversations =
+    new FirestoreConversationRepository(
+      firestore,
+    );
+
+  const audit =
+    new FirestoreRequestAuditSink(
+      firestore,
+    );
+
+  const rateLimiter =
+    new FirestoreRateLimiter(
+      firestore,
+    );
+
+  const toolServices =
+    createToolServices({
+      registry,
+    });
+
+  const chat =
+    Object.freeze({
+      async generate(input) {
+        return runtimeGateway
+          .generate(
+            input,
+          );
+      },
+    });
+
   const application =
     createBackendApplication(
       {
-        chat:
-          Object.freeze({
-            async generate(
-              input,
-            ) {
-              return runtimeGateway
-                .generate(
-                  input,
-                );
-            },
-          }),
-
+        chat,
         assistants,
-
-        conversations:
-          new FirestoreConversationRepository(
-            firestore,
-          ),
-
-        audit:
-          new FirestoreRequestAuditSink(
-            firestore,
-          ),
-
-        rateLimiter:
-          new FirestoreRateLimiter(
-            firestore,
-          ),
-
-        tools:
-          createToolServices({
-            registry,
-          }),
-
+        conversations,
+        audit,
+        rateLimiter,
+        tools: toolServices,
         knowledgeManager,
-
         studio,
-
         authentication:
           new FirebaseAuthenticationProvider(),
       },
@@ -916,8 +1176,175 @@ manager.create({
       },
     );
 
+  const livePrincipal =
+    Object.freeze({
+      actorId:
+        "chopify-whatsapp-live",
+      tenantId:
+        commerceTenantId,
+      roles:
+        Object.freeze([
+          "user",
+        ]),
+      permissions:
+        Object.freeze([
+          "assistants:read",
+          "conversations:read",
+          "conversations:write",
+          "chat:execute",
+          "tools:execute",
+        ]),
+      assistantIds:
+        Object.freeze([
+          COMMERCE_ASSISTANT_ID,
+        ]),
+      authenticated: true,
+    });
+
+  const liveApplication =
+    createBackendApplication(
+      {
+        chat,
+        assistants,
+        conversations,
+        audit,
+        rateLimiter,
+        tools: toolServices,
+        knowledgeManager,
+        studio,
+        authentication:
+          Object.freeze({
+            async authenticate() {
+              return Object.freeze({
+                principal:
+                  livePrincipal,
+              });
+            },
+          }),
+      },
+      {
+        maximumBodyBytes:
+          32 * 1024,
+      },
+    );
+
+  async function processLiveWhatsApp(input) {
+    const requestId =
+      `live-${crypto.randomUUID()}`;
+    const correlationId =
+      `whatsapp-${input.providerMessageId}`;
+    const conversationId =
+      `whatsapp-${createHash("sha256")
+        .update(`${commerceTenantId}:${input.customer.phone}`)
+        .digest("hex")}`;
+    const headers =
+      Object.freeze({
+        authorization:
+          "Bearer internal-live-boundary",
+        "content-type":
+          "application/json",
+        "x-request-id":
+          requestId,
+        "x-correlation-id":
+          correlationId,
+      });
+
+    const identityResponse =
+      await liveApplication.handle(
+        new Request(
+          "https://gano-bot.internal/v1/tools/commerce.resolveCustomerIdentity/execute",
+          {
+            method: "POST",
+            headers,
+            body:
+              JSON.stringify({
+                assistantId:
+                  COMMERCE_ASSISTANT_ID,
+                conversationId,
+                arguments:
+                  {
+                    channel:
+                      "WHATSAPP",
+                    externalIdentifier:
+                      input.customer.phone,
+                    phone:
+                      input.customer.phone,
+                    ...(input.customer.name
+                      ? {
+                          name:
+                            input.customer.name,
+                        }
+                      : {}),
+                    acquisitionSource:
+                      "WHATSAPP",
+                  },
+              }),
+          },
+        ),
+      );
+
+    if (!identityResponse.ok) {
+      throw new Error(
+        `WhatsApp identity resolution failed (${identityResponse.status}).`,
+      );
+    }
+
+    const chatResponse =
+      await liveApplication.handle(
+        new Request(
+          "https://gano-bot.internal/v1/chat",
+          {
+            method: "POST",
+            headers,
+            body:
+              JSON.stringify({
+                assistantId:
+                  COMMERCE_ASSISTANT_ID,
+                conversationId,
+                message:
+                  input.text,
+                locale: "es",
+                metadata:
+                  {
+                    channel:
+                      "WHATSAPP",
+                    providerMessageId:
+                      input.providerMessageId,
+                  },
+              }),
+          },
+        ),
+      );
+
+    if (!chatResponse.ok) {
+      throw new Error(
+        `Commerce assistant failed (${chatResponse.status}).`,
+      );
+    }
+
+    const payload =
+      await chatResponse.json();
+    const reply =
+      payload?.data?.message?.content;
+
+    if (
+      typeof reply !== "string" ||
+      !reply.trim()
+    ) {
+      throw new Error(
+        "Commerce assistant returned no reply.",
+      );
+    }
+
+    return Object.freeze({
+      reply:
+        reply.trim(),
+    });
+  }
+
   return Object.freeze({
     application,
+    processLiveWhatsApp,
 
     manager,
 

@@ -15,20 +15,20 @@
  * INFRAESTRUCTURA BASE
  * ========================================================================== */
 
-export * from "./base";
+export * from "./base.js";
 
 /* ============================================================================
  * OPENAI
  * ========================================================================== */
 
-export * from "./openai";
+export * from "./openai.js";
 
 /* ============================================================================
  * GOOGLE GEMINI
  * ========================================================================== */
 
-export * from "./base";
-export * from "./openai";
-export * from "./gemini";
-export * from "./registry";
-export * from "./fallback";
+export * from "./base.js";
+export * from "./openai.js";
+export * from "./gemini.js";
+export * from "./registry.js";
+export * from "./fallback.js";

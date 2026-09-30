@@ -98,7 +98,7 @@ export function createCommerceTools(
           additionalProperties: false,
           required: Object.freeze(["query"]),
           properties: Object.freeze({
-            query: stringSchema,
+            query: Object.freeze({ type: "string" }),
             limit: Object.freeze({ type: "number", minimum: 1, maximum: 20 }),
           }),
         }),

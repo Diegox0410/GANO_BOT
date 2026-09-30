@@ -68,3 +68,6 @@ blob-report/
 
 # Local backups
 scripts/*.backup.mjs
+.vercel
+.env*
+GANOBOT_RUNTIME_FIX_SOURCE.zip

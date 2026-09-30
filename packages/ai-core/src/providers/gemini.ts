@@ -29,7 +29,7 @@ import {
   AIProviderError,
   BaseAIProvider,
   type BaseAIProviderConfig,
-} from "./base";
+} from "./base.js";
 
 /* ============================================================================
  * CONSTANTES

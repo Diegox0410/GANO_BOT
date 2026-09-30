@@ -477,10 +477,10 @@ export type {
   Identifier,
 } from "@gano-bot/shared";
 
-export * from "./types";
-export * from "./embeddings";
-export * from "./providers";
-export * from "./chat";
+export * from "./types.js";
+export * from "./embeddings.js";
+export * from "./providers/index.js";
+export * from "./chat/index.js";
 export * from "./runtime/index.js";
 export {
   GANO_SIM_INTENT_RULES,

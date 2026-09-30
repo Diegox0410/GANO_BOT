@@ -52,6 +52,26 @@ assert.ok(tools.every((tool) => tool.descriptor.tenantId === "floes"));
 assert.ok(tools.every((tool) => tool.descriptor.assistantId === "commerce-assistant"));
 assert.ok(tools.every((tool) => tool.descriptor.requiredPermissions.includes("tools:execute")));
 
+const search = tools.find((tool) => tool.descriptor.id === COMMERCE_TOOL_IDS.searchProducts);
+assert.ok(search);
+await search.handler.execute(
+  { query: "", limit: 5 },
+  {
+    tenantId: "floes",
+    assistantId: "commerce-assistant",
+    actorId: "customer-1",
+    conversationId: "conv-1",
+    requestId: "req-catalog",
+    correlationId: "corr-catalog",
+    roles: ["user"],
+    permissions: ["tools:execute"],
+    allowedToolIds: tools.map((tool) => tool.descriptor.id),
+    allowedCategories: ["business"],
+    maximumRiskLevel: "safe",
+  },
+);
+assert.deepEqual(calls.at(-1)?.input, { query: "", limit: 5 });
+
 const proof = tools.find((tool) => tool.descriptor.id === COMMERCE_TOOL_IDS.attachPaymentProof);
 assert.ok(proof);
 const result = await proof.handler.execute(

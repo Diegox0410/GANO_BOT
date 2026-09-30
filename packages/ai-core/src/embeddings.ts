@@ -24,7 +24,7 @@ import type {
   AIEmbeddingVector,
   AIIdentifier,
   AIMetadata,
-} from "./types";
+} from "./types.js";
 
 /* ============================================================================
  * CONSTANTES

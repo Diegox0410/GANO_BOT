@@ -21,12 +21,12 @@ import type {
 import {
   createGeminiEmbeddingProvider,
   type GeminiProviderConfig,
-} from "./gemini";
+} from "./gemini.js";
 
 import {
   createOpenAIEmbeddingProvider,
   type OpenAIProviderConfig,
-} from "./openai";
+} from "./openai.js";
 
 /* ============================================================================
  * TIPOS PÚBLICOS
