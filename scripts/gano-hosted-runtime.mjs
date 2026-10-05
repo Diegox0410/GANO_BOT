@@ -103,7 +103,7 @@ function commerceToolCall(message, conversationMessages = []) {
     .toLowerCase();
 
   const isContextualFollowUp =
-    /^[¿¡]?(?:y\s+)?(?:cuanto|cuesta|precio|valor|que precio|y ese|y esa|ese|esa|este|esta|tiene colores|que colores|colores|hay stock|tienen stock|disponibilidad)(?:\s+.*)?[?!.]*$/i
+    /^[¿¡]?(?:y\s+)?(?:cuanto|cuesta|precio|valor|que precio|y ese|y esa|ese|esa|este|esta|tiene colores|que colores|colores|hay stock|tienen stock|disponibilidad|(?:y\s+)?(?:en\s+)?(?:celeste|vino|rosa|azul marino|negro))(?:\s+.*)?[?!.]*$/i
       .test(normalizedCurrent.trim());
 
   let contextualProduct;
