@@ -75,13 +75,13 @@ function createAssistantMessage(content, createdAt) {
   });
 }
 
-function commerceToolCall(message) {
+function commerceToolCall(message, conversationMessages = []) {
   const productMatch = message.match(/\b(?:producto|productId)\s*[:=]?\s*([\w.-]+)/i);
   const orderMatch = message.match(/\b(?:pedido|orderId)\s*[:=]?\s*([\w.-]+)/i);
   const quantityMatch = message.match(/\b(?:cantidad|quantity)\s*[:=]?\s*(\d+)/i);
   const requestsCatalog =
-    /\b(?:productos?|cat[aá]logo)\b/i.test(message) &&
-    /\b(?:disponibles?|tienen|ofrecen|venden|mostrar|muestra|listar|lista|cu[aá]les|qu[eé])\b/i.test(message);
+    /\b(?:cat[aá]logo|productos?|modelos?|opciones|scrubs?|qu[eé]\s+(?:tienen|venden|ofrecen)|mu[eé]strame|quiero\s+ver)\b/i.test(message) &&
+    /\b(?:disponibles?|tienen|ofrecen|venden|mostrar|muestra|mu[eé]strame|listar|lista|cu[aá]les|qu[eé]|ver|hay)\b/i.test(message);
 
   if (/\b(?:estado|status)\b/i.test(message) && orderMatch) {
     return { name: "commerce.getOrderStatus", arguments: { orderId: orderMatch[1] } };
@@ -97,7 +97,58 @@ function commerceToolCall(message) {
     };
   }
 
-  let query = message;
+  const normalizedCurrent = String(message ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+  const isContextualFollowUp =
+    /^[¿¡]?(?:y\s+)?(?:cuanto|cuesta|precio|valor|que precio|y ese|y esa|ese|esa|este|esta|tiene colores|que colores|colores|hay stock|tienen stock|disponibilidad)(?:\s+.*)?[?!.]*$/i
+      .test(normalizedCurrent.trim());
+
+  let contextualProduct;
+
+  if (isContextualFollowUp) {
+    const previousUserMessages = conversationMessages
+      .filter(
+        (entry) =>
+          entry &&
+          entry.role === "user" &&
+          typeof entry.content === "string" &&
+          entry.content !== message,
+      )
+      .map((entry) => entry.content)
+      .reverse();
+
+    for (const previous of previousUserMessages) {
+      const normalizedPrevious = previous
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+
+      if (/maria belen/.test(normalizedPrevious)) {
+        contextualProduct = "Scrub Mar\u00eda Bel\u00e9n";
+        break;
+      }
+
+      if (/maria jose/.test(normalizedPrevious)) {
+        contextualProduct = "Scrub Mar\u00eda Jos\u00e9";
+        break;
+      }
+
+      if (/chaqueta/.test(normalizedPrevious)) {
+        contextualProduct = "Chaqueta Mar\u00eda Jos\u00e9";
+        break;
+      }
+
+      if (/esencial/.test(normalizedPrevious)) {
+        contextualProduct = "Scrub Esencial";
+        break;
+      }
+    }
+  }
+
+  let query = contextualProduct ?? message;
   if (/no (?:sea|se vea|tan) (?:tan )?b[aá]sico|m[aá]s diferenciad/i.test(message)) query = "Scrubs con Detalles";
   else if (/chaqueta/i.test(message)) query = "Chaqueta María José";
   else if (/mar[ií]a bel[eé]n/i.test(message)) query = "Scrub María Belén";
@@ -113,35 +164,161 @@ function commerceToolCall(message) {
 function commerceResultText(result) {
   if (Array.isArray(result)) {
     if (result.length === 0) {
-      return "No encontré productos coincidentes en el catálogo autorizado de Chopify.";
+      return (
+        "Por ahora no encontr\u00e9 un producto que coincida exactamente con lo que buscas \ud83d\ude0a\n\n" +
+        "Si quieres, cu\u00e9ntame un poquito m\u00e1s qu\u00e9 tipo de modelo est\u00e1s buscando y te ayudo a revisar las opciones disponibles."
+      );
     }
 
-    const lines = result.map((item) => {
-      const record = item && typeof item === "object" ? item : {};
-      const price = record.price && typeof record.price === "object" ? record.price : {};
-      const hasPrice = typeof price.amount === "number" && record.pricingStatus !== "PENDING";
-      const pricing = hasPrice ? `${price.amount.toFixed(2)} ${typeof price.currency === "string" ? price.currency : ""}` : "precio pendiente de confirmación";
-      const variants = Array.isArray(record.variants) ? record.variants : [];
-      const colors = variants.map((variant) => variant && typeof variant === "object" ? variant.color : undefined).filter((color) => typeof color === "string");
-      const category = typeof record.category === "string" ? ` · ${record.category}` : "";
-      const colorText = colors.length > 0 ? ` · colores: ${colors.join(", ")}` : "";
-      return `- ${String(record.name ?? record.productId ?? "Producto")}${category}: ${pricing}${colorText} (id ${String(record.productId ?? "no disponible")})`;
-    });
+    const products = result
+      .map((item) => {
+        const record =
+          item && typeof item === "object"
+            ? item
+            : {};
 
-    return `Estos son los datos vigentes devueltos por Chopify:\n${lines.join("\n")}`;
+        const price =
+          record.price && typeof record.price === "object"
+            ? record.price
+            : {};
+
+        const hasPrice =
+          typeof price.amount === "number" &&
+          record.pricingStatus !== "PENDING";
+
+        const variants =
+          Array.isArray(record.variants)
+            ? record.variants
+            : [];
+
+        const colors = variants
+          .map((variant) =>
+            variant && typeof variant === "object"
+              ? variant.color
+              : undefined,
+          )
+          .filter(
+            (color) =>
+              typeof color === "string" &&
+              color.trim().length > 0,
+          );
+
+        return {
+          name: String(
+            record.name ??
+            record.productId ??
+            "Producto",
+          ),
+          price:
+            hasPrice
+              ? `${price.amount.toFixed(2)} ${typeof price.currency === "string" ? price.currency : ""}`.trim()
+              : undefined,
+          colors,
+        };
+      });
+
+    if (products.length === 1) {
+      const product = products[0];
+
+      const details = [];
+
+      if (product.colors.length > 0) {
+        details.push(
+          `Lo tenemos en ${product.colors.join(", ")}.`,
+        );
+      }
+
+      if (product.price) {
+        details.push(
+          `Su precio es ${product.price}.`,
+        );
+      } else {
+        details.push(
+          "El precio todav\u00eda est\u00e1 pendiente de confirmaci\u00f3n, as\u00ed que prefiero no darte un valor incorrecto.",
+        );
+      }
+
+      return (
+        `\u00a1Claro! \ud83d\ude0a Te cuento sobre el *${product.name}*.\n\n` +
+        details.join(" ") +
+        "\n\nSi quieres, tambi\u00e9n puedo ayudarte a revisar otro de nuestros modelos."
+      );
+    }
+
+    const names =
+      products.map((product) => `\u2022 *${product.name}*`);
+
+    const productsWithColors =
+      products.filter(
+        (product) =>
+          product.colors.length > 0,
+      );
+
+    let reply =
+      "\u00a1Claro! \ud83d\ude0a Actualmente en FLOES tenemos estas opciones:\n\n" +
+      names.join("\n");
+
+    if (productsWithColors.length > 0) {
+      reply += "\n\n";
+
+      reply += productsWithColors
+        .map(
+          (product) =>
+            `El *${product.name}* est\u00e1 disponible en ${product.colors.join(", ")}.`,
+        )
+        .join("\n");
+    }
+
+    reply +=
+      "\n\nSi alguno te llam\u00f3 la atenci\u00f3n, dime cu\u00e1l y con gusto te cuento los detalles que tenemos disponibles. \u2728";
+
+    return reply;
   }
 
   if (result && typeof result === "object") {
     const record = result;
+
     if (typeof record.orderId === "string") {
-      return `Chopify reporta el pedido ${record.orderId} con estado ${String(record.status ?? "no disponible")}, pago ${String(record.paymentStatus ?? "no disponible")} y preparación ${String(record.fulfillmentStatus ?? "no disponible")}.`;
+      const status =
+        typeof record.status === "string"
+          ? record.status
+          : undefined;
+
+      if (status) {
+        return `Claro \ud83d\ude0a Tu pedido se encuentra actualmente con estado *${status}*. Si quieres, puedo ayudarte a revisar otro detalle del pedido.`;
+      }
+
+      return "Claro \ud83d\ude0a Encontr\u00e9 tu pedido, pero no tengo un estado adicional confirmado para mostrarte en este momento.";
     }
-    if (typeof record.productId === "string" && typeof record.available === "boolean") {
-      return `Chopify reporta ${record.available ? "disponibilidad" : "falta de disponibilidad"} para ${record.productId}${typeof record.availableQuantity === "number" ? ` (cantidad disponible: ${record.availableQuantity})` : ""}.`;
+
+    if (
+      typeof record.productId === "string" &&
+      typeof record.available === "boolean"
+    ) {
+      if (record.available) {
+        const quantity =
+          typeof record.availableQuantity === "number"
+            ? ` Actualmente aparecen ${record.availableQuantity} unidades disponibles.`
+            : "";
+
+        return (
+          "S\u00ed \ud83d\ude0a El producto aparece disponible." +
+          quantity +
+          " Si quieres, puedo ayudarte con otro detalle."
+        );
+      }
+
+      return (
+        "En este momento no aparece disponibilidad confirmada para ese producto. " +
+        "Si quieres, puedo ayudarte a revisar otra opci\u00f3n \ud83d\ude0a"
+      );
     }
   }
 
-  return "Chopify completó la consulta comercial. No se infirieron datos adicionales.";
+  return (
+    "La consulta se realiz\u00f3 correctamente, pero no tengo informaci\u00f3n suficiente para darte un detalle adicional sin asumir datos. " +
+    "Si me indicas qu\u00e9 deseas conocer, con gusto lo revisamos \ud83d\ude0a"
+  );
 }
 
 const knowledgePermissions = Object.freeze([
@@ -875,6 +1052,7 @@ const knowledgeProcessor =
           const call =
             commerceToolCall(
               userMessage,
+              request.messages,
             );
           content =
             "Consultando la fuente comercial autorizada…";
@@ -1418,4 +1596,6 @@ export {
   assistantId,
   tenantId,
   knowledgePrincipal,
+  commerceToolCall,
+  commerceResultText,
 };
