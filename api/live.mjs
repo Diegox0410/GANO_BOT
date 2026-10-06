@@ -5,7 +5,7 @@ import {
 } from "../scripts/gano-hosted-runtime.mjs";
 
 const MAXIMUM_BODY_BYTES = 16 * 1024;
-const TENANT_ID = "tenant-floes";
+const LIVE_TENANTS = new Set(["tenant-floes", "tenant-mg"]);
 const CHANNEL = "WHATSAPP";
 
 function json(response, status, body) {
@@ -86,7 +86,7 @@ export function validateLivePayload(value) {
   const name = typeof customer?.name === "string" ? customer.name.trim() : "";
   const text = typeof body?.text === "string" ? body.text.trim() : "";
 
-  if (tenantId !== TENANT_ID) return Object.freeze({ status: 403, error: "tenant-not-allowed" });
+  if (!LIVE_TENANTS.has(tenantId)) return Object.freeze({ status: 403, error: "tenant-not-allowed" });
   if (channel !== CHANNEL) return Object.freeze({ status: 400, error: "channel-not-allowed" });
   if (!providerMessageId || providerMessageId.length > 256 || /[\s\x00-\x1f\x7f]/.test(providerMessageId)) {
     return Object.freeze({ status: 400, error: "invalid-provider-message-id" });
@@ -99,7 +99,7 @@ export function validateLivePayload(value) {
 
   return Object.freeze({
     value: Object.freeze({
-      tenantId: TENANT_ID,
+      tenantId,
       channel: CHANNEL,
       providerMessageId,
       customer: Object.freeze({
