@@ -28,6 +28,29 @@ export interface CommerceProductSummary {
   readonly images?: readonly CommerceProductImage[];
   readonly category?: string;
   readonly fulfillmentMode?: string;
+  readonly characteristics?: readonly string[];
+  readonly material?: string;
+  readonly collection?: string;
+  readonly gender?: string;
+  readonly promotionalPrice?: CommerceMoney | null;
+  readonly ganoBotNotes?: string;
+  readonly sizeGuide?: CommerceSizeGuide;
+  readonly sizeRecommendation?: string;
+  readonly exchangePolicy?: { readonly allowed: boolean | null; readonly conditions: string };
+  readonly preparationTime?: string;
+  readonly deliveryType?: string;
+}
+
+export interface CommerceSizeGuideRow {
+  readonly size: string;
+  readonly measurementsCm: Readonly<Record<string, number>>;
+}
+
+export interface CommerceSizeGuide {
+  readonly measurement: "FLAT_GARMENT_CM";
+  readonly instructions: string;
+  readonly blouse?: readonly CommerceSizeGuideRow[];
+  readonly trousers?: readonly CommerceSizeGuideRow[];
 }
 
 export interface CommerceProductDetails extends CommerceProductSummary {
@@ -46,6 +69,11 @@ export interface CommerceProductVariant {
   readonly availableQuantity?: number;
   readonly images?: readonly CommerceProductImage[];
   readonly fulfillmentMode?: string;
+  readonly imageUrl?: string;
+  readonly active?: boolean;
+  readonly size?: string;
+  readonly sizes?: readonly string[];
+  readonly promotionalPrice?: CommerceMoney | null;
 }
 
 export interface CommerceProductImage { readonly url: string; readonly alt: string }
@@ -103,6 +131,7 @@ export interface CommerceOrderDraftLineInput {
   readonly productId: string;
   readonly variantId?: string;
   readonly quantity: number;
+  readonly size?: string;
 }
 
 export interface CommerceOrderDraftInput {
@@ -139,12 +168,14 @@ export type CommerceOrderStatus =
   | "payment-under-review"
   | "paid"
   | "preparing"
+  | "ready-for-dispatch"
   | "dispatched"
   | "delivered"
   | "cancelled";
 
 export interface CommerceOrderSnapshot {
   readonly orderId: string;
+  readonly customerId?: string;
   readonly status: CommerceOrderStatus;
   readonly paymentStatus?:
     | "unpaid"
@@ -154,9 +185,38 @@ export interface CommerceOrderSnapshot {
   readonly fulfillmentStatus?:
     | "unfulfilled"
     | "preparing"
+    | "ready-for-dispatch"
     | "dispatched"
     | "delivered";
   readonly total?: CommerceMoney;
+  readonly trackingCode?: string;
+  readonly courier?: string;
+  readonly deliveryMode?: string;
+  readonly deliveryAddress?: Readonly<Record<string, unknown>>;
+  readonly followUp?: Readonly<Record<string, unknown>>;
+  readonly exchangePolicy?: { readonly allowed: boolean | null; readonly conditions: string };
+}
+
+export type CommerceDeliveryMode = "SERVIENTREGA" | "PICKUP" | "LOCAL_DELIVERY";
+export interface CommerceDeliveryAddress {
+  readonly name?: string;
+  readonly phone?: string;
+  readonly city?: string;
+  readonly province?: string;
+  readonly address?: string;
+  readonly reference?: string;
+}
+export interface CommerceDeliveryInput {
+  readonly orderId: string;
+  readonly customerId: string;
+  readonly deliveryMode: CommerceDeliveryMode;
+  readonly deliveryAddress?: CommerceDeliveryAddress;
+}
+export interface CommerceFollowUpInput {
+  readonly orderId: string;
+  readonly customerId: string;
+  readonly outcome: "RECEIVED" | "SATISFIED" | "ISSUE" | "HUMAN_REQUESTED";
+  readonly note?: string;
 }
 
 export interface CommercePort {
@@ -199,4 +259,7 @@ export interface CommercePort {
     context: CommerceRequestContext,
     input: { readonly orderId: string },
   ): Promise<CommerceOrderSnapshot | undefined>;
+
+  updateOrderDelivery?(context: CommerceRequestContext, input: CommerceDeliveryInput): Promise<CommerceOrderSnapshot>;
+  recordOrderFollowUp?(context: CommerceRequestContext, input: CommerceFollowUpInput): Promise<CommerceOrderSnapshot>;
 }

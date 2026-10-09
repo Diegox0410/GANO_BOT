@@ -260,7 +260,7 @@ async function handleRequest(
 
   try {
     const runtime =
-      await getGanoHostedRuntime();
+      await getGanoHostedRuntime(process.env.GANO_COMMERCE_TENANT_ID);
 
     const headers =
       buildHeaders(

@@ -1,0 +1,180 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { consultCatalog, createCatalogTools, CATALOG_TOOL_IDS, safeCatalogImageUrl } from "../apps/functions/dist/commerce/catalogTools.js";
+import { createCommerceRuntimeFromEnv } from "../apps/functions/dist/commerce/runtime.js";
+import { WhatsAppChannelAdapter } from "../apps/functions/dist/channels/whatsapp.js";
+import { catalogConversationCall, catalogConversationResponse } from "../scripts/floes-catalog-conversation.mjs";
+import { getGanoHostedRuntime } from "../scripts/gano-hosted-runtime.mjs";
+
+const context = { tenantId: "tenant-floes", assistantId: "commerce-assistant", actorId: "customer-1", conversationId: "conversation-1", requestId: "request-1", correlationId: "correlation-1" };
+
+test("hosted commerce runtime rejects an omitted tenant instead of defaulting to FLOES", async () => {
+  await assert.rejects(getGanoHostedRuntime(), /tenant is not allowed/i);
+});
+const wine = { variantId: "daniela-vino", name: "Vino", color: "Vino", available: true, active: true, sizes: ["S", "M"], availableQuantity: 4, price: { amount: 37, currency: "USD" }, pricingStatus: "READY", images: [{ url: "https://storage.example.test/floes/daniela/vino.jpeg", alt: "Daniela Vino" }] };
+const product = { productId: "daniela", name: "Modelo Daniela", description: "Scrub con pantalón recto.", characteristics: ["Porta credencial", "Bolsillo lateral derecho"], ganoBotNotes: "Comparar con otro modelo si necesita almacenamiento; no pegar notas internas", price: { amount: 40, currency: "USD" }, pricingStatus: "READY", available: true, variants: [wine, { ...wine, variantId: "daniela-negro", color: "Negro", active: false }, { ...wine, variantId: "daniela-caqui", color: "Caqui", available: false }], sizeGuide: { measurement: "FLAT_GARMENT_CM", instructions: "Medir prenda plana", blouse: [{ size: "M", measurementsCm: { pecho: 50 } }], trousers: [{ size: "M", measurementsCm: { cadera: 52 } }] } };
+function fakePort(overrides = {}) {
+  return { async searchProducts() { return [product]; }, async getProductDetails() { return product; }, async checkAvailability() { return { productId: product.productId, available: true, availableQuantity: 4 }; }, async createOrUpdateCustomer() { return { customerId: "customer-1" }; }, async createOpportunity() { return { opportunityId: "opportunity-1", customerId: "customer-1", status: "new" }; }, async createOrderDraft() { return { orderId: "order-1", status: "draft", customerId: "customer-1", total: { amount: 37, currency: "USD" } }; }, ...overrides };
+}
+function history(selection) { return [{ role: "assistant", content: "Modelo confirmado", metadata: { commerceSelection: JSON.stringify(selection) } }]; }
+
+test("catálogo resuelve modelo y muestra solamente colores activos disponibles", async () => {
+  const result = await consultCatalog(fakePort(), context, { query: "Daniela" });
+  const response = catalogConversationResponse(result, "Quiero Daniela");
+  assert.match(response.reply, /Vino/); assert.doesNotMatch(response.reply, /Negro|Caqui|pegar notas internas/);
+  assert.deepEqual(response.selection, { productId: "daniela", name: "Modelo Daniela" });
+});
+
+test("selección contextual normaliza color, devuelve imagen real y precio de la variante", async () => {
+  const result = await consultCatalog(fakePort(), context, { productId: "daniela", color: "VINO" });
+  const response = catalogConversationResponse(result, "Vino");
+  assert.equal(response.image.url, wine.images[0].url); assert.match(response.reply, /37\.00 USD/); assert.match(response.reply, /S, M/);
+  const call = catalogConversationCall("Soy talla M", history(response.selection));
+  assert.deepEqual(call.arguments, { productId: "daniela", color: "Vino", size: "M" });
+});
+
+test("Maria Jose and Elite colors resolve their own authoritative variant photos", async () => {
+  for (const [name, productId, color] of [["Modelo María José", "maria-jose", "Palo Rosa"], ["Modelo Élite", "elite", "Lila"]]) {
+    const variant = { ...wine, variantId: `${productId}-${color.toLowerCase().replaceAll(" ", "-")}`, color,
+      images: [{ url: `https://storage.example.test/floes/${productId}/${color.toLowerCase().replaceAll(" ", "-")}.webp`, alt: `${name} ${color}` }] };
+    const model = { ...product, productId, name, variants: [variant] };
+    const result = await consultCatalog(fakePort({ async getProductDetails() { return model; } }), context, { productId, color });
+    const response = catalogConversationResponse(result, color);
+    assert.equal(response.image.url, variant.images[0].url);
+    assert.match(response.reply, new RegExp(color));
+    assert.match(response.reply, /37\.00 USD/);
+  }
+});
+
+test("un color o talla inexistente jamás produce una variante o foto inventada", async () => {
+  const missingColor = catalogConversationResponse(await consultCatalog(fakePort(), context, { productId: "daniela", color: "Lila" }), "Lila");
+  assert.equal(missingColor.image, undefined); assert.match(missingColor.reply, /No encuentro Lila/); assert.equal(missingColor.selection.variantId, undefined);
+  const missingSize = catalogConversationResponse(await consultCatalog(fakePort(), context, { productId: "daniela", color: "Vino", size: "XL" }), "Soy talla XL");
+  assert.equal(missingSize.image, undefined); assert.equal(missingSize.selection.size, undefined);
+});
+
+test("guía compara medidas planas sin duplicar ni prometer ajuste", async () => {
+  const response = catalogConversationResponse(await consultCatalog(fakePort(), context, { productId: "daniela", color: "Vino", size: "M" }), "¿Qué talla recomiendas?");
+  assert.match(response.reply, /pecho 50 cm/); assert.match(response.reply, /cadera 52 cm/); assert.doesNotMatch(response.reply, /pecho 100/); assert.match(response.reply, /sin multiplicarla por dos/); assert.match(response.reply, /entre dos tallas/);
+});
+
+test("recomendación entre dos tallas utiliza medida plana documentada", async () => {
+  const between = { ...product, sizeGuide: { ...product.sizeGuide, blouse: [{ size: "S", measurementsCm: { pecho: 48 } }, { size: "M", measurementsCm: { pecho: 50 } }] } };
+  const response = catalogConversationResponse(await consultCatalog(fakePort({ async getProductDetails() { return between; } }), context, { productId: "daniela", color: "Vino" }), "Mi prenda plana: pecho 49 cm");
+  assert.match(response.reply, /49 cm queda entre S \(48 cm\) y M \(50 cm\)/);
+  const call = catalogConversationCall("Mi prenda plana: pecho 49 cm", history({ productId: "daniela", color: "Vino" }));
+  assert.equal(call.arguments.productId, "daniela"); assert.equal(call.arguments.color, "Vino");
+});
+
+test("precio pendiente de una variante nunca se reemplaza por precio padre", async () => {
+  const pending = { ...product, variants: [{ ...wine, pricingStatus: "PENDING", price: null }] };
+  const response = catalogConversationResponse(await consultCatalog(fakePort({ async getProductDetails() { return pending; } }), context, { productId: "daniela", color: "Vino" }), "Precio");
+  assert.match(response.reply, /pendiente de confirmación/); assert.doesNotMatch(response.reply, /40\.00 USD/);
+});
+
+test("consulta no sustituye imágenes ausentes por imagen de otro color", async () => {
+  const noPhoto = { ...product, imageUrl: "https://storage.example.test/otro-color.jpeg", variants: [{ ...wine, images: [] }] };
+  const response = catalogConversationResponse(await consultCatalog(fakePort({ async getProductDetails() { return noPhoto; } }), context, { productId: "daniela", color: "Vino" }), "Vino");
+  assert.equal(response.image, undefined);
+});
+
+test("comparación usa características documentadas y notas como contexto sin exponerlas", async () => {
+  const other = { ...product, productId: "elite", name: "Modelo Élite", characteristics: ["Muchos bolsillos"], ganoBotNotes: "Útil cuando necesita muchos bolsillos" };
+  const response = catalogConversationResponse({ kind: "catalog", products: [product, other] }, "Quiero muchos bolsillos");
+  assert.match(response.reply, /Modelo Élite/); assert.match(response.reply, /Muchos bolsillos/); assert.doesNotMatch(response.reply, /Útil cuando/);
+});
+
+test("borrador verifica precio, talla y disponibilidad antes de escrituras y conserva talla", async () => {
+  const calls = [];
+  const port = fakePort({ async createOrderDraft(c, input) { calls.push({ c, input }); return { orderId: "order-1", customerId: input.customerId, status: "draft" }; } });
+  const tool = createCatalogTools(port, context.tenantId, context.assistantId).find(item => item.descriptor.id === CATALOG_TOOL_IDS.prepareCustomerOrder);
+  const result = await tool.handler.execute({ productId: "daniela", variantId: wine.variantId, size: "M", quantity: 1, customerId: "customer-1" }, context);
+  assert.equal(result.order.status, "draft"); assert.equal(calls[0].input.lines[0].size, "M"); assert.match(calls[0].c.idempotencyKey, /draft$/);
+  await assert.rejects(() => tool.handler.execute({ productId: "daniela", variantId: wine.variantId, size: "XL", quantity: 1, customerId: "customer-1" }, context), /unavailable/);
+  assert.equal(calls.length, 1);
+});
+
+test("tools de catálogo y canal rechazan cruces de tenant", async () => {
+  const tool = createCatalogTools(fakePort(), context.tenantId, context.assistantId)[0];
+  await assert.rejects(() => tool.handler.execute({ productId: "daniela" }, { ...context, tenantId: "tenant-mg" }), /authorized scope/);
+  const adapter = new WhatsAppChannelAdapter(context.tenantId, { async send() { return { messageId: "message-1" }; } });
+  assert.throws(() => adapter.sendText({ tenantId: "tenant-mg", recipient: "593999999999", correlationId: "correlation-1" }, "Hola"), /scope/);
+});
+
+test("WhatsApp adapter envía texto, imagen y caption por transport inyectable", async () => {
+  const messages = [];
+  const adapter = new WhatsAppChannelAdapter(context.tenantId, { async send(c, message) { messages.push({ c, message }); return { messageId: `message-${messages.length}` }; } });
+  const c = { tenantId: context.tenantId, recipient: "593999999999", correlationId: "correlation-1" };
+  await adapter.sendText(c, "Hola"); await adapter.sendImage(c, wine.images[0].url); await adapter.sendImageWithCaption(c, wine.images[0].url, "Modelo Daniela · Vino");
+  assert.deepEqual(messages.map(item => item.message.type), ["text", "image", "image"]); assert.equal(messages[2].message.caption, "Modelo Daniela · Vino");
+  assert.throws(() => adapter.sendImage(c, "C:\\Users\\User\\vino.jpeg"), /HTTPS/);
+  for (const url of ["http://public.example/image.jpg", "https://localhost/a.jpg", "https://127.0.0.1/a.jpg", "https://u:p@public.example/a.jpg"]) assert.equal(safeCatalogImageUrl(url), undefined);
+});
+
+test("feature flag activa tools de piloto solamente FLOES sin aprobar pagos", () => {
+  const env = { CHOPIFY_COMMERCE_BASE_URL: "https://chopify.example.test", CHOPIFY_COMMERCE_API_TOKEN: "test", FLOES_CATALOG_V2: "true" };
+  const floes = createCommerceRuntimeFromEnv("tenant-floes", env); const mg = createCommerceRuntimeFromEnv("tenant-mg", env);
+  assert.equal(floes.tools.length, 14); assert.equal(mg.tools.length, 10);
+  assert.ok(floes.tools.every(item => !/approvePayment|rejectPayment|markOrder/.test(item.descriptor.id)));
+});
+
+test("talla antes de color queda como preferencia y se valida al elegir variante", async () => {
+  const response = catalogConversationResponse(await consultCatalog(fakePort(), context, { productId: "daniela", size: "M" }), "Soy talla M");
+  assert.equal(response.selection.size, "M"); assert.equal(response.selection.variantId, undefined);
+  assert.deepEqual(catalogConversationCall("Vino", history(response.selection)).arguments, { productId: "daniela", color: "Vino", size: "M" });
+});
+
+test("colores con SKUs por talla agrupan medidas y resuelven SKU exacto", async () => {
+  const perSize = { ...product, variants: [{ ...wine, variantId: "wine-s", sizes: undefined, size: "S" }, { ...wine, variantId: "wine-m", sizes: undefined, size: "M" }] };
+  const port = fakePort({ async getProductDetails() { return perSize; } });
+  const color = await consultCatalog(port, context, { productId: "daniela", color: "Vino" });
+  assert.deepEqual(color.selectedVariant.sizes, ["S", "M"]);
+  assert.equal((await consultCatalog(port, context, { productId: "daniela", color: "Vino", size: "M" })).selectedVariant.variantId, "wine-m");
+});
+
+test("entrega usa datos existentes y pide únicamente los campos faltantes", async () => {
+  const saved = [];
+  const snapshot = { orderId: "order-1", customerId: "customer-1", status: "ready-for-dispatch", deliveryAddress: { name: "Ana", phone: "593999999999", city: "Quito" } };
+  const port = fakePort({ async getOrderStatus() { return snapshot; }, async updateOrderDelivery(c, input) { saved.push(input); return { ...snapshot, ...input }; } });
+  const tool = createCatalogTools(port, context.tenantId, context.assistantId).find(item => item.descriptor.id === CATALOG_TOOL_IDS.updateOrderDelivery);
+  const result = await tool.handler.execute({ orderId: "order-1", customerId: "customer-1", deliveryMode: "SERVIENTREGA" }, context);
+  assert.deepEqual(result.missingFields, ["province", "address"]); assert.equal(saved.length, 0);
+  const response = catalogConversationResponse(result, "Servientrega", { productId: "daniela", orderId: "order-1" });
+  assert.doesNotMatch(response.reply, /falta confirmar: nombre|teléfono|ciudad/);
+  const call = catalogConversationCall("Provincia: Pichincha, Dirección: Calle Real 42", history(response.selection));
+  const completed = await tool.handler.execute(call.arguments, context);
+  assert.equal(completed.kind, "delivery-updated"); assert.equal(saved[0].deliveryAddress.city, "Quito"); assert.equal(saved[0].deliveryAddress.address, "Calle Real 42");
+  await assert.rejects(() => tool.handler.execute({ orderId: "order-1", customerId: "customer-other", deliveryMode: "PICKUP" }, context), /belong/);
+});
+
+test("postventa solo registra sobre pedido entregado del propio cliente", async () => {
+  const saved = [];
+  const snapshot = { orderId: "order-1", customerId: "customer-1", status: "delivered", exchangePolicy: { allowed: true, conditions: "Consultar FLOES antes de enviar una prenda." } };
+  const port = fakePort({ async getOrderStatus() { return snapshot; }, async recordOrderFollowUp(c, input) { saved.push(input); return snapshot; } });
+  const tool = createCatalogTools(port, context.tenantId, context.assistantId).find(item => item.descriptor.id === CATALOG_TOOL_IDS.recordOrderFollowUp);
+  const call = catalogConversationCall("Ya recibí mi pedido y estoy contenta", history({ productId: "daniela", orderId: "order-1", orderStatus: "delivered", customerId: "customer-1" }));
+  assert.equal(call.name, CATALOG_TOOL_IDS.recordOrderFollowUp);
+  assert.equal(call.arguments.outcome, "SATISFIED");
+  const response = catalogConversationResponse(await tool.handler.execute(call.arguments, context), "Contenta", { productId: "daniela", orderId: "order-1" });
+  assert.match(response.reply, /Registramos tu seguimiento/); assert.equal(saved.length, 1);
+  await assert.rejects(() => tool.handler.execute({ ...call.arguments, customerId: "other" }, context), /delivered order/);
+});
+
+test("flujo piloto conserva modelo, color, talla, draft, comprobante y estados Owner", async () => {
+  let selection = catalogConversationResponse(await consultCatalog(fakePort(), context, { query: "Daniela" }), "Quiero Daniela").selection;
+  assert.equal(catalogConversationCall("Vino", history(selection)).arguments.color, "Vino");
+  selection = catalogConversationResponse(await consultCatalog(fakePort(), context, { productId: "daniela", color: "Vino", size: "M" }), "Soy talla M", selection).selection;
+  const call = catalogConversationCall("Lo quiero", history(selection), { customerId: "customer-1" });
+  assert.equal(call.name, CATALOG_TOOL_IDS.prepareCustomerOrder);
+  const tool = createCatalogTools(fakePort(), context.tenantId, context.assistantId).find(item => item.descriptor.id === call.name);
+  const draft = catalogConversationResponse(await tool.handler.execute(call.arguments, context), "Lo quiero", selection); selection = draft.selection;
+  assert.equal(selection.orderId, "order-1"); assert.match(draft.reply, /borrador/);
+  const proofCall = catalogConversationCall("Comprobante", history(selection), { paymentProofUrl: "https://storage.example.test/proof.jpg" });
+  assert.equal(proofCall.name, "commerce.attachPaymentProof");
+  const proof = catalogConversationResponse({ proofId: "proof-1", orderId: "order-1", status: "pending_review" }, "Comprobante", selection);
+  assert.match(proof.reply, /pendiente de revisión/);
+  for (const status of ["preparing", "ready-for-dispatch", "dispatched", "delivered"]) {
+    const response = catalogConversationResponse({ orderId: "order-1", status, paymentStatus: "approved", trackingCode: "tracking-123" }, "Estado", selection);
+    assert.ok(response.reply.length > 15); assert.equal(response.selection.orderId, "order-1");
+  }
+});

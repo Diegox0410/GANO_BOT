@@ -691,7 +691,7 @@ async function main() {
    */
 
   const runtime =
-    await getGanoHostedRuntime();
+    await getGanoHostedRuntime(process.env.GANO_COMMERCE_TENANT_ID);
 
   const base =
     runtime.knowledgeBase;

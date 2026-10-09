@@ -7,3 +7,4 @@ export * from "./supervisor.js";
 export * from "./supervisorTools.js";
 export * from "./identity.js";
 export * from "./identityTools.js";
+export * from "./catalogTools.js";

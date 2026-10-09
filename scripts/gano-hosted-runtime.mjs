@@ -1,5 +1,6 @@
 import { AIChatProviderRegistry } from "../packages/ai-core/dist/chat/registry.js";
 import { createHash } from "node:crypto";
+import { catalogConversationCall, catalogConversationResponse, readCatalogSelection } from "./floes-catalog-conversation.mjs";
 
 import {
   KnowledgeManagerService,
@@ -51,7 +52,6 @@ import {
 
 const tenantId = "gano-sim";
 const assistantId = "gano-assistant";
-const commerceTenantId = "tenant-floes";
 
 class LiveProcessingError extends Error {
   constructor(stage, status, safeMessage) {
@@ -574,7 +574,7 @@ function answerFromKnowledge({
   );
 }
 
-async function createHostedRuntime() {
+async function createHostedRuntime(commerceTenantId) {
   /*
    * =========================================================
    * KNOWLEDGE MANAGER — PERSISTENCIA FIRESTORE
@@ -1031,7 +1031,10 @@ const knowledgeProcessor =
           );
 
         let content;
+        let catalogResponse;
         let toolCalls = Object.freeze([]);
+        const catalogV2 = commerceTenantId === "tenant-floes" && process.env.FLOES_CATALOG_V2 === "true";
+        const userMessage = request.messages.findLast(message => message.role === "user")?.content ?? "";
 
         if (lastToolMessage !== undefined) {
           let result;
@@ -1042,7 +1045,10 @@ const knowledgeProcessor =
           } catch {
             result = undefined;
           }
-          content = commerceResultText(result);
+          if (catalogV2) {
+            catalogResponse = catalogConversationResponse(result, userMessage, readCatalogSelection(request.messages));
+            content = catalogResponse.reply;
+          } else content = commerceResultText(result);
         } else {
           const userMessage =
             request.messages.findLast(
@@ -1050,9 +1056,10 @@ const knowledgeProcessor =
                 message.role === "user",
             )?.content ?? "";
           const call =
-            commerceToolCall(
+            (catalogV2 ? catalogConversationCall : commerceToolCall)(
               userMessage,
               request.messages,
+              request.metadata ?? {},
             );
           content =
             "Consultando la fuente comercial autorizada…";
@@ -1067,11 +1074,11 @@ const knowledgeProcessor =
           ]);
         }
 
-        const message =
-          createAssistantMessage(
+        const baseMessage = createAssistantMessage(
             content,
             createdAt,
           );
+        const message = catalogResponse ? Object.freeze({ ...baseMessage, metadata: Object.freeze({ commerceSelection: JSON.stringify(catalogResponse.selection), ...(catalogResponse.image ? { commerceImage: JSON.stringify(catalogResponse.image) } : {}) }) }) : baseMessage;
 
         return Object.freeze({
           id:
@@ -1427,8 +1434,9 @@ manager.create({
     );
 
   async function processLiveWhatsApp(input) {
+    if (input.tenantId !== commerceTenantId) throw new LiveProcessingError("tenant-isolation", 403, "Live request tenant does not match runtime.");
     const requestId =
-      `live-${crypto.randomUUID()}`;
+      `live-${createHash("sha256").update(`${commerceTenantId}:${input.providerMessageId}`).digest("hex")}`;
     const correlationId =
       `whatsapp-${input.providerMessageId}`;
     const conversationId =
@@ -1518,6 +1526,10 @@ manager.create({
                       "WHATSAPP",
                     providerMessageId:
                       input.providerMessageId,
+                    customerId: identityResult.output?.customerId,
+                    customerPhone: input.customer.phone,
+                    ...(input.customer.name ? { customerName: input.customer.name } : {}),
+                    ...(input.paymentProofUrl ? { paymentProofUrl: input.paymentProofUrl } : {}),
                   },
               }),
           },
@@ -1548,10 +1560,11 @@ manager.create({
       );
     }
 
-    return Object.freeze({
-      reply:
-        reply.trim(),
-    });
+    let image;
+    if (commerceTenantId === "tenant-floes" && process.env.FLOES_WHATSAPP_MEDIA === "true" && typeof payload?.data?.message?.metadata?.commerceImage === "string") {
+      try { image = JSON.parse(payload.data.message.metadata.commerceImage); } catch { image = undefined; }
+    }
+    return Object.freeze({ reply: reply.trim(), ...(image ? { messages: Object.freeze([Object.freeze(image), Object.freeze({ type: "text", text: reply.trim() })]) } : {}) });
   }
 
   return Object.freeze({
@@ -1580,16 +1593,19 @@ const runtimeKey =
     "gano-bot.hosted-runtime",
   );
 
-export async function getGanoHostedRuntime() {
+export async function getGanoHostedRuntime(requestedTenantId) {
   const target =
     globalThis;
 
-  if (!target[runtimeKey]) {
-    target[runtimeKey] =
-      createHostedRuntime();
+  if (!["tenant-floes", "tenant-mg", "tenant-dgng"].includes(requestedTenantId)) throw new Error("Commerce tenant is not allowed.");
+  if (!(target[runtimeKey] instanceof Map)) target[runtimeKey] = new Map();
+  const runtimes = target[runtimeKey];
+  if (!runtimes.has(requestedTenantId)) {
+    const pending = createHostedRuntime(requestedTenantId);
+    runtimes.set(requestedTenantId, pending);
+    pending.catch(() => { if (runtimes.get(requestedTenantId) === pending) runtimes.delete(requestedTenantId); });
   }
-
-  return target[runtimeKey];
+  return runtimes.get(requestedTenantId);
 }
 
 export {

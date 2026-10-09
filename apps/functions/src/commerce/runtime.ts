@@ -4,6 +4,7 @@ import { COMMERCE_ASSISTANT_ID } from './profile.js'
 import { createCommerceTools } from './tools.js'
 import { createSupervisorTools } from './supervisorTools.js'
 import { createIdentityTools } from './identityTools.js'
+import { createCatalogTools } from './catalogTools.js'
 
 export interface CommerceRuntimeComposition {readonly tenantId:string;readonly assistantId:string;readonly port:ChopifyHttpAdapter;readonly tools:readonly ToolDefinition[]}
 function allowedTenants(env:NodeJS.ProcessEnv){return new Set((env.GANOBOT_COMMERCE_ALLOWED_TENANTS??'tenant-floes,tenant-mg,tenant-dgng').split(',').map(v=>v.trim()).filter(Boolean))}
@@ -17,5 +18,5 @@ export function createCommerceRuntimeFromEnv(tenantId:string,env:NodeJS.ProcessE
  validateCommerceRuntimeEnv(env);if(!allowedTenants(env).has(tenantId))throw new Error(`Commerce tenant is not allowed: ${tenantId}`)
  if(assistantId!==COMMERCE_ASSISTANT_ID)throw new Error(`Commerce runtime requires assistantId ${COMMERCE_ASSISTANT_ID}`)
  const port=createChopifyHttpAdapterFromEnv(env)
- return Object.freeze({tenantId,assistantId,port,tools:Object.freeze([...createCommerceTools(port,tenantId,assistantId),...createSupervisorTools(port,tenantId,assistantId),...createIdentityTools(port,tenantId,assistantId)])})
+ return Object.freeze({tenantId,assistantId,port,tools:Object.freeze([...createCommerceTools(port,tenantId,assistantId),...createSupervisorTools(port,tenantId,assistantId),...createIdentityTools(port,tenantId,assistantId),...(tenantId==='tenant-floes'&&env.FLOES_CATALOG_V2==='true'?createCatalogTools(port,tenantId,assistantId):[])])})
 }

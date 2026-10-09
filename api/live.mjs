@@ -3,6 +3,7 @@ import { timingSafeEqual } from "node:crypto";
 import {
   getGanoHostedRuntime,
 } from "../scripts/gano-hosted-runtime.mjs";
+import { safeCatalogImageUrl } from "../apps/functions/dist/commerce/catalogTools.js";
 
 const MAXIMUM_BODY_BYTES = 16 * 1024;
 const LIVE_TENANTS = new Set(["tenant-floes", "tenant-mg"]);
@@ -85,6 +86,7 @@ export function validateLivePayload(value) {
   const phone = rawPhone.replace(/\D/g, "");
   const name = typeof customer?.name === "string" ? customer.name.trim() : "";
   const text = typeof body?.text === "string" ? body.text.trim() : "";
+  const paymentProofUrl = body?.paymentProofUrl === undefined ? undefined : safeCatalogImageUrl(body.paymentProofUrl);
 
   if (!LIVE_TENANTS.has(tenantId)) return Object.freeze({ status: 403, error: "tenant-not-allowed" });
   if (channel !== CHANNEL) return Object.freeze({ status: 400, error: "channel-not-allowed" });
@@ -96,6 +98,7 @@ export function validateLivePayload(value) {
   }
   if (name.length > 100) return Object.freeze({ status: 400, error: "invalid-customer-name" });
   if (!text || text.length > 4000) return Object.freeze({ status: 400, error: "invalid-text" });
+  if (body?.paymentProofUrl !== undefined && !paymentProofUrl) return Object.freeze({ status: 400, error: "invalid-payment-proof-url" });
 
   return Object.freeze({
     value: Object.freeze({
@@ -107,6 +110,7 @@ export function validateLivePayload(value) {
         ...(name ? { name } : {}),
       }),
       text,
+      ...(paymentProofUrl ? { paymentProofUrl } : {}),
     }),
   });
 }
@@ -139,13 +143,19 @@ export function createLiveHandler({
       }
 
       stage = "runtime-initialization";
-      const runtime = await runtimeFactory();
+      const runtime = await runtimeFactory(validation.value.tenantId);
       stage = "commerce-processing";
       const result = await runtime.processLiveWhatsApp(validation.value);
       if (typeof result?.reply !== "string" || !result.reply.trim() || result.reply.length > 4000) {
         throw new Error("invalid-live-reply");
       }
-      json(response, 200, { reply: result.reply.trim() });
+      const messages = Array.isArray(result.messages) ? result.messages.slice(0, 8).flatMap(item => {
+        if (item?.type === "text" && typeof item.text === "string" && item.text.trim() && item.text.length <= 4000) return [{ type: "text", text: item.text.trim() }];
+        const url = item?.type === "image" ? safeCatalogImageUrl(item.url) : undefined;
+        if (!url || (item.caption !== undefined && (typeof item.caption !== "string" || item.caption.length > 1024))) return [];
+        return [{ type: "image", url, ...(typeof item.caption === "string" ? { caption: item.caption } : {}), ...(typeof item.alt === "string" ? { alt: item.alt.slice(0, 200) } : {}) }];
+      }) : [];
+      json(response, 200, { reply: result.reply.trim(), ...(messages.length ? { messages } : {}) });
     } catch (error) {
       if (error instanceof SyntaxError) {
         json(response, 400, { error: { code: "INVALID_JSON", message: "Invalid JSON body." } });

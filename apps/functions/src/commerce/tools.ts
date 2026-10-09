@@ -261,6 +261,7 @@ export function createCommerceTools(
                 properties: Object.freeze({
                   productId: stringSchema,
                   variantId: stringSchema,
+                  size: stringSchema,
                   quantity: Object.freeze({ type: "number", minimum: 1 }),
                 }),
               }),
@@ -282,6 +283,7 @@ export function createCommerceTools(
                 return [{
                   productId,
                   variantId: stringValue(record.variantId),
+                  size: stringValue(record.size),
                   quantity,
                 }];
               })

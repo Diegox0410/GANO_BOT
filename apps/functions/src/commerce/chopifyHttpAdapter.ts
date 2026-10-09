@@ -3,6 +3,7 @@ import type {
   CommerceAvailability, CommerceCustomerInput, CommerceCustomer, CommerceOpportunityInput,
   CommerceOpportunity, CommerceOrderDraftInput, CommerceOrderDraft, CommercePaymentProofInput,
   CommercePaymentProof, CommerceOrderSnapshot,
+  CommerceDeliveryInput, CommerceFollowUpInput,
 } from './contracts.js'
 import type { CommerceEscalationInput, CommerceEscalationResult, CommerceSupervisorPort } from './supervisor.js'
 import type { CommerceIdentityPort, CommerceResolveIdentityInput, CommerceResolvedIdentity } from './identity.js'
@@ -43,6 +44,8 @@ export class ChopifyHttpAdapter implements CommercePort,CommerceSupervisorPort,C
  createOrderDraft(c:CommerceRequestContext,i:CommerceOrderDraftInput){return this.call<CommerceOrderDraft>(c,'createOrderDraft',i)}
  attachPaymentProof(c:CommerceRequestContext,i:CommercePaymentProofInput){return this.call<CommercePaymentProof>(c,'attachPaymentProof',i)}
  getOrderStatus(c:CommerceRequestContext,i:{readonly orderId:string}){return this.call<CommerceOrderSnapshot|undefined>(c,'getOrderStatus',i)}
+ updateOrderDelivery(c:CommerceRequestContext,i:CommerceDeliveryInput){return this.call<CommerceOrderSnapshot>(c,'updateOrderDelivery',i)}
+ recordOrderFollowUp(c:CommerceRequestContext,i:CommerceFollowUpInput){return this.call<CommerceOrderSnapshot>(c,'recordOrderFollowUp',i)}
  requestHumanEscalation(c:CommerceRequestContext,i:CommerceEscalationInput){return this.call<CommerceEscalationResult>(c,'requestHumanEscalation',{...i,conversationId:c.conversationId})}
  resolveCustomerIdentity(c:CommerceRequestContext,i:CommerceResolveIdentityInput){return this.call<CommerceResolvedIdentity>(c,'resolveCustomerIdentity',i)}
 }

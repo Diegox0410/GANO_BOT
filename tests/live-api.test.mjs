@@ -80,6 +80,21 @@ test("normaliza identidad y procesa una solicitud válida con el runtime existen
   });
 });
 
+test("live entrega multimedia HTTPS ordenado y selecciona el runtime del tenant", async () => {
+  let requestedTenant;
+  const result = await invoke({ token: TOKEN, runtimeFactory: async tenantId => {
+    requestedTenant = tenantId;
+    return { async processLiveWhatsApp() { return { reply: "Daniela Vino", messages: [{ type: "image", url: "https://storage.example.test/daniela/vino.jpeg", caption: "Daniela · Vino" }, { type: "text", text: "Daniela Vino" }, { type: "image", url: "C:\\Users\\User\\vino.jpeg" }] }; } };
+  } });
+  assert.equal(requestedTenant, "tenant-floes"); assert.equal(result.status, 200);
+  assert.deepEqual(result.payload.messages.map(message => message.type), ["image", "text"]);
+});
+
+test("live valida URL del comprobante sin permitir rutas locales", () => {
+  assert.equal(validateLivePayload({ ...VALID_BODY, paymentProofUrl: "C:\\Users\\proof.jpg" }).status, 400);
+  assert.equal(validateLivePayload({ ...VALID_BODY, paymentProofUrl: "https://storage.example.test/proof.jpg" }).value.paymentProofUrl, "https://storage.example.test/proof.jpg");
+});
+
 test("no filtra secretos cuando el runtime falla", async () => {
   const leakedSecret = "never-return-this-secret";
   const logs = [];
