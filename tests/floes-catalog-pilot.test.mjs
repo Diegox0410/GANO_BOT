@@ -11,7 +11,7 @@ const context = { tenantId: "tenant-floes", assistantId: "commerce-assistant", a
 test("hosted commerce runtime rejects an omitted tenant instead of defaulting to FLOES", async () => {
   await assert.rejects(getGanoHostedRuntime(), /tenant is not allowed/i);
 });
-const wine = { variantId: "daniela-vino", name: "Vino", color: "Vino", available: true, active: true, sizes: ["S", "M"], availableQuantity: 4, price: { amount: 37, currency: "USD" }, pricingStatus: "READY", images: [{ url: "https://storage.example.test/floes/daniela/vino.jpeg", alt: "Daniela Vino" }] };
+const wine = { variantId: "daniela-vino", name: "Vino", color: "Vino", available: true, active: true, sizes: ["S", "M"], availableQuantity: 4, price: { amount: 37, currency: "USD" }, pricingStatus: "READY", images: [{ url: "https://floes-commerce.vercel.app/catalogo/floes/daniela/vino.jpeg", alt: "Daniela Vino" }] };
 const product = { productId: "daniela", name: "Modelo Daniela", description: "Scrub con pantalón recto.", characteristics: ["Porta credencial", "Bolsillo lateral derecho"], ganoBotNotes: "Comparar con otro modelo si necesita almacenamiento; no pegar notas internas", price: { amount: 40, currency: "USD" }, pricingStatus: "READY", available: true, variants: [wine, { ...wine, variantId: "daniela-negro", color: "Negro", active: false }, { ...wine, variantId: "daniela-caqui", color: "Caqui", available: false }], sizeGuide: { measurement: "FLAT_GARMENT_CM", instructions: "Medir prenda plana", blouse: [{ size: "M", measurementsCm: { pecho: 50 } }], trousers: [{ size: "M", measurementsCm: { cadera: 52 } }] } };
 function fakePort(overrides = {}) {
   return { async searchProducts() { return [product]; }, async getProductDetails() { return product; }, async checkAvailability() { return { productId: product.productId, available: true, availableQuantity: 4 }; }, async createOrUpdateCustomer() { return { customerId: "customer-1" }; }, async createOpportunity() { return { opportunityId: "opportunity-1", customerId: "customer-1", status: "new" }; }, async createOrderDraft() { return { orderId: "order-1", status: "draft", customerId: "customer-1", total: { amount: 37, currency: "USD" } }; }, ...overrides };
@@ -106,7 +106,7 @@ test("WhatsApp adapter envía texto, imagen y caption por transport inyectable",
   const adapter = new WhatsAppChannelAdapter(context.tenantId, { async send(c, message) { messages.push({ c, message }); return { messageId: `message-${messages.length}` }; } });
   const c = { tenantId: context.tenantId, recipient: "593999999999", correlationId: "correlation-1" };
   await adapter.sendText(c, "Hola"); await adapter.sendImage(c, wine.images[0].url); await adapter.sendImageWithCaption(c, wine.images[0].url, "Modelo Daniela · Vino");
-  assert.deepEqual(messages.map(item => item.message.type), ["text", "image", "image"]); assert.equal(messages[2].message.caption, "Modelo Daniela · Vino");
+  assert.deepEqual(messages.map(item => item.message.type), ["text", "image", "image"]); assert.equal(messages[2].message.caption, "Modelo Daniela · Vino"); assert.equal(messages[2].message.url, "https://floes-commerce.vercel.app/catalogo/floes/daniela/vino.jpeg");
   assert.throws(() => adapter.sendImage(c, "C:\\Users\\User\\vino.jpeg"), /HTTPS/);
   for (const url of ["http://public.example/image.jpg", "https://localhost/a.jpg", "https://127.0.0.1/a.jpg", "https://u:p@public.example/a.jpg"]) assert.equal(safeCatalogImageUrl(url), undefined);
 });
