@@ -312,11 +312,12 @@ export class FirestoreKnowledgeDocumentProcessor
         () =>
           new Date()
             .toISOString(),
+    private readonly collectionName = CHUNKS_COLLECTION,
   ) {}
 
   private collection() {
     return this.firestore.collection(
-      CHUNKS_COLLECTION,
+      this.collectionName,
     );
   }
 

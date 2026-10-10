@@ -75,7 +75,7 @@ export function describeLiveError(error, fallbackStage) {
   });
 }
 
-export function validateLivePayload(value) {
+export function validateLivePayload(value, environment = process.env) {
   const body = record(value);
   const customer = record(body?.customer);
   const tenantId = typeof body?.tenantId === "string" ? body.tenantId.trim() : "";
@@ -87,8 +87,11 @@ export function validateLivePayload(value) {
   const name = typeof customer?.name === "string" ? customer.name.trim() : "";
   const text = typeof body?.text === "string" ? body.text.trim() : "";
   const paymentProofUrl = body?.paymentProofUrl === undefined ? undefined : safeCatalogImageUrl(body.paymentProofUrl);
+  const paymentProofReference = typeof body?.paymentProofReference === "string" && /^meta-whatsapp:\/\/[0-9]{5,32}\/media\/[A-Za-z0-9_-]{1,256}$/.test(body.paymentProofReference) ? body.paymentProofReference : undefined;
 
   if (!LIVE_TENANTS.has(tenantId)) return Object.freeze({ status: 403, error: "tenant-not-allowed" });
+  const allowedTenants = environment.GANOBOT_COMMERCE_ALLOWED_TENANTS?.split(",").map(value => value.trim()).filter(Boolean);
+  if (allowedTenants && !allowedTenants.includes(tenantId)) return Object.freeze({ status: 403, error: "tenant-not-allowed" });
   if (channel !== CHANNEL) return Object.freeze({ status: 400, error: "channel-not-allowed" });
   if (!providerMessageId || providerMessageId.length > 256 || /[\s\x00-\x1f\x7f]/.test(providerMessageId)) {
     return Object.freeze({ status: 400, error: "invalid-provider-message-id" });
@@ -99,6 +102,7 @@ export function validateLivePayload(value) {
   if (name.length > 100) return Object.freeze({ status: 400, error: "invalid-customer-name" });
   if (!text || text.length > 4000) return Object.freeze({ status: 400, error: "invalid-text" });
   if (body?.paymentProofUrl !== undefined && !paymentProofUrl) return Object.freeze({ status: 400, error: "invalid-payment-proof-url" });
+  if (body?.paymentProofReference !== undefined && !paymentProofReference) return Object.freeze({ status: 400, error: "invalid-payment-proof-reference" });
 
   return Object.freeze({
     value: Object.freeze({
@@ -111,6 +115,7 @@ export function validateLivePayload(value) {
       }),
       text,
       ...(paymentProofUrl ? { paymentProofUrl } : {}),
+      ...(paymentProofReference ? { paymentProofReference } : {}),
     }),
   });
 }
@@ -134,7 +139,7 @@ export function createLiveHandler({
 
     let stage = "request-validation";
     try {
-      const validation = validateLivePayload(readBody(request));
+      const validation = validateLivePayload(readBody(request), environment);
       if (validation.value === undefined) {
         json(response, validation.status, {
           error: { code: "INVALID_LIVE_REQUEST", message: "Invalid live request." },
@@ -155,7 +160,9 @@ export function createLiveHandler({
         if (!url || (item.caption !== undefined && (typeof item.caption !== "string" || item.caption.length > 1024))) return [];
         return [{ type: "image", url, ...(typeof item.caption === "string" ? { caption: item.caption } : {}), ...(typeof item.alt === "string" ? { alt: item.alt.slice(0, 200) } : {}) }];
       }) : [];
-      json(response, 200, { reply: result.reply.trim(), ...(messages.length ? { messages } : {}) });
+      const rawCommerce = record(result.commerce);
+      const commerce = rawCommerce?.tenantId === validation.value.tenantId ? Object.fromEntries(Object.entries(rawCommerce).filter(([key, value]) => ["tenantId", "customerId", "conversationId", "requestId", "correlationId", "productId", "variantId", "color", "size", "orderId", "orderStatus"].includes(key) && typeof value === "string" && value.length <= 256)) : undefined;
+      json(response, 200, { reply: result.reply.trim(), ...(messages.length ? { messages } : {}), ...(commerce ? { commerce } : {}) });
     } catch (error) {
       if (error instanceof SyntaxError) {
         json(response, 400, { error: { code: "INVALID_JSON", message: "Invalid JSON body." } });

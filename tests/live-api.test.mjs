@@ -58,6 +58,13 @@ test("rechaza otro tenant, un canal distinto y payloads inválidos", async () =>
   assert.equal(invalid.status, 400);
 });
 
+test("Preview allowlist de FLOES rechaza MG y tenant ausente antes del runtime", () => {
+  const environment = { GANOBOT_COMMERCE_ALLOWED_TENANTS: "tenant-floes" };
+  assert.equal(validateLivePayload({ ...VALID_BODY, tenantId: "tenant-mg" }, environment).status, 403);
+  assert.equal(validateLivePayload({ ...VALID_BODY, tenantId: "" }, environment).status, 403);
+  assert.equal(validateLivePayload(VALID_BODY, environment).value.tenantId, "tenant-floes");
+});
+
 test("normaliza identidad y procesa una solicitud válida con el runtime existente", async () => {
   let received;
   const result = await invoke({
@@ -93,6 +100,22 @@ test("live entrega multimedia HTTPS ordenado y selecciona el runtime del tenant"
 test("live valida URL del comprobante sin permitir rutas locales", () => {
   assert.equal(validateLivePayload({ ...VALID_BODY, paymentProofUrl: "C:\\Users\\proof.jpg" }).status, 400);
   assert.equal(validateLivePayload({ ...VALID_BODY, paymentProofUrl: "https://storage.example.test/proof.jpg" }).value.paymentProofUrl, "https://storage.example.test/proof.jpg");
+});
+
+test("live valida referencia privada Meta y la entrega al runtime sin publicar el comprobante", async () => {
+  const paymentProofReference = "meta-whatsapp://123456789/media/987654321";
+  let received;
+  const result = await invoke({ token: TOKEN, body: { ...VALID_BODY, paymentProofReference }, runtimeFactory: async () => ({ async processLiveWhatsApp(input) { received = input; return { reply: "Comprobante pendiente de revisión" }; } }) });
+  assert.equal(result.status, 200);
+  assert.equal(received.paymentProofReference, paymentProofReference);
+  for (const reference of ["file:///proof.jpg", "meta-whatsapp://123456789/media/../../secret", "meta-whatsapp://tenant-mg/media/123", "https://localhost/a", "meta-whatsapp://123456789/media/id?token=secret"]) assert.equal(validateLivePayload({ ...VALID_BODY, paymentProofReference: reference }).status, 400);
+});
+
+test("live retorna trazabilidad comercial mínima y rechaza metadata de otro tenant", async () => {
+  const result = await invoke({ token: TOKEN, runtimeFactory: async () => ({ async processLiveWhatsApp() { return { reply: "Pedido creado", commerce: { tenantId: "tenant-floes", customerId: "customer-1", orderId: "order-1", phone: "593000000001", token: "must-not-leak" } }; } }) });
+  assert.deepEqual(result.payload.commerce, { tenantId: "tenant-floes", customerId: "customer-1", orderId: "order-1" });
+  const otherTenant = await invoke({ token: TOKEN, runtimeFactory: async () => ({ async processLiveWhatsApp() { return { reply: "Respuesta", commerce: { tenantId: "tenant-mg", orderId: "mg-order" } }; } }) });
+  assert.equal(otherTenant.payload.commerce, undefined);
 });
 
 test("no filtra secretos cuando el runtime falla", async () => {

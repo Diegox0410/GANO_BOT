@@ -58,13 +58,14 @@ export class FirestoreKnowledgeManagerRepository
   public constructor(
     private readonly firestore:
       Firestore,
+    private readonly rootCollection = ROOT_COLLECTION,
   ) {}
   
   private collection(
     name: string,
   ) {
     return this.firestore.collection(
-      `${ROOT_COLLECTION}_${name}`,
+      `${this.rootCollection}_${name}`,
     );
   }
 

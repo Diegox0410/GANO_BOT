@@ -19,7 +19,8 @@ export function catalogConversationCall(message, messages = [], metadata = {}) {
   const selection = readCatalogSelection(messages);
   const current = normalized(message);
   const customerId = metadata.customerId ?? selection.customerId;
-  const size = message.match(/\b(?:talla|soy\s+talla|size)\s*[:=]?\s*([a-z0-9]+)\b/i)?.[1]?.toUpperCase();
+  if (selection.orderId && (safeCatalogImageUrl(metadata.paymentProofUrl) || typeof metadata.paymentProofReference === "string" && /^meta-whatsapp:\/\/[0-9]{5,32}\/media\/[A-Za-z0-9_-]{1,256}$/.test(metadata.paymentProofReference))) return { name: "commerce.attachPaymentProof", arguments: { orderId: selection.orderId, ...(safeCatalogImageUrl(metadata.paymentProofUrl) ? { proofUrl: metadata.paymentProofUrl } : {}), ...(metadata.paymentProofReference ? { externalReference: metadata.paymentProofReference } : {}) } };
+  const size = (message.match(/\b(?:talla|soy\s+talla|size)\s*[:=]?\s*([a-z0-9]+)\b/i)?.[1] ?? message.trim().match(/^(XS|S|M|L|XL)[.!?]?$/i)?.[1])?.toUpperCase();
   if (selection.orderId && customerId && selection.orderStatus === "delivered" && /\b(?:recibi|recibido|satisfecha|contenta|encanto|novedad|problema|reclamo|humano|persona)\b/.test(current)) return { name: "commerce.recordOrderFollowUp", arguments: { orderId: selection.orderId, customerId, outcome: /novedad|problema|reclamo/.test(current) ? "ISSUE" : /humano|persona/.test(current) ? "HUMAN_REQUESTED" : /satisfecha|contenta|encanto/.test(current) ? "SATISFIED" : "RECEIVED", note: message.slice(0, 500) } };
   const deliveryMode = /servientrega/.test(current) ? "SERVIENTREGA" : /retiro|recoger/.test(current) ? "PICKUP" : /entrega presencial|entrega local/.test(current) ? "LOCAL_DELIVERY" : selection.deliveryPending === "true" ? selection.deliveryMode : undefined;
   if (selection.orderId && customerId && deliveryMode) {
@@ -37,16 +38,15 @@ export function catalogConversationCall(message, messages = [], metadata = {}) {
   }
   if (/\b(?:hablar con|persona|asesora|humano|novedad|reclamo|insatisfecha|devolucion)\b/.test(current)) return { name: "commerce.requestHumanEscalation", arguments: { reason: message.trim().slice(0, 500), priority: "NORMAL" } };
   if (/\b(?:estado|pago confirmado|ya pague|preparacion|despacho|guia|entregado|recibi|recibido)\b/.test(current) && selection.orderId) return { name: "commerce.getOrderStatus", arguments: { orderId: selection.orderId } };
-  if (metadata.paymentProofUrl && selection.orderId && safeCatalogImageUrl(metadata.paymentProofUrl)) return { name: "commerce.attachPaymentProof", arguments: { orderId: selection.orderId, proofUrl: metadata.paymentProofUrl } };
   if (/\b(?:lo quiero|quiero este|quiero esta|confirmo pedido)\b/.test(current) && selection.orderId) return { name: "commerce.getOrderStatus", arguments: { orderId: selection.orderId } };
   if (/\b(?:lo quiero|quiero este|quiero esta|agregar al pedido|comprar|confirmo pedido)\b/.test(current) && selection.productId && selection.variantId && selection.size) return {
     name: "commerce.prepareCustomerOrder",
     arguments: { productId: selection.productId, variantId: selection.variantId, size: selection.size, quantity: Number(message.match(/\b(?:cantidad|unidades)\s*[:=]?\s*(\d+)\b/i)?.[1] ?? 1), ...(metadata.customerId ? { customerId: metadata.customerId } : {}), ...(metadata.customerPhone ? { phone: metadata.customerPhone } : {}), ...(metadata.customerName ? { name: metadata.customerName } : {}), channel: "WHATSAPP", source: "WHATSAPP" },
   };
-  const requestsCatalog = /\b(?:catalogo|otro modelo|que modelos|que tienen|que venden|opciones|hola|uniforme)\b/.test(current);
+  const requestsCatalog = /\b(?:catalogo|otro modelo|que modelos|que tienen|que venden|opciones|uniforme)\b/.test(current) || /^hola[!.?]*$/.test(current);
   const named = message.match(/\b(?:modelo|scrub)\s+(.+?)(?:\s+(?:en|color|talla)\s+|[?.!]|$)/i)?.[1]?.trim();
   let query = named ?? message.replace(/^[¿¡\s]*(?:hola[,!]?\s*)?(?:quiero|me interesa|estoy interesada en|tienen|ensename|enséñame|muestrame|muéstrame|ver|conocer)\s+(?:ver\s+)?(?:el\s+|la\s+)?/i, "").replace(/[?!.,]+$/g, "").trim();
-  const explicitColor = message.match(/\b(?:en|color)\s+(.+?)(?:\s+talla\s+|[?.!]|$)/i)?.[1]?.trim();
+  const explicitColor = (message.match(/\bcolor\s+(.+?)(?:\s+talla\s+|[?.!]|$)/i)?.[1] ?? message.match(/\ben\s+(.+?)(?:\s+talla\s+|[?.!]|$)/i)?.[1])?.trim();
   const asksAnother = /^(?:quiero|me interesa|tienen|ensename|muestrame)\s+/.test(current) && !/^(?:lo quiero|quiero este|quiero esta)/.test(current);
   const follows = selection.productId && !named && !requestsCatalog && !asksAnother && (size || explicitColor || /\b(?:cuanto|cuesta|precio|colores|tallas|medida|guia|recomienda|recomiendas|bolsillos|fresco|elegante|manga|jogger|cambio|entrega|lo quiero|quiero este|pecho|cintura|cadera|plana|prenda)\b/.test(current) || current.split(/\s+/).length <= 3);
   if (follows) {
@@ -65,7 +65,7 @@ function colors(product) { return [...new Map(availableCatalogVariants(product).
 function guidance(product, message) {
   if (!/talla|medida|gu[ií]a|ajuste|\bcm\b|cent[ií]metros|pecho|cintura|cadera/i.test(message)) return "";
   const guide = product.sizeGuide;
-  let reply = "La guía FLOES compara medidas planas de la prenda en centímetros: extiende una prenda que te quede bien y mide horizontalmente. Compara esa medida tal cual, sin multiplicarla por dos. El ajuste puede variar; no podemos prometer un ajuste perfecto.";
+  let reply = "La guía FLOES compara medidas planas de la prenda en centímetros; no son contornos corporales. Toma una prenda que te quede bien, extiéndela sobre una superficie plana y mide de lado a lado. Compara esa medida tal cual, sin multiplicarla por dos. El ajuste puede variar; no podemos prometer un ajuste perfecto.";
   if (guide?.measurement === "FLAT_GARMENT_CM") {
     for (const [name, rows] of [["Blusa", guide.blouse], ["Pantalón", guide.trousers]]) {
       if (Array.isArray(rows) && rows.length) reply += `\n${name}:\n` + rows.map(row => `${row.size}: ${Object.entries(row.measurementsCm ?? {}).filter(([, value]) => typeof value === "number" && Number.isFinite(value)).map(([key, value]) => `${key} ${value} cm`).join(", ")}`).join("\n");
@@ -116,10 +116,14 @@ export function catalogConversationResponse(result, message = "", previous = {})
     const price = variant?.pricingStatus === "PENDING" ? undefined : variant ? money(variant.promotionalPrice ?? variant.price, variant.pricingStatus ?? product.pricingStatus) ?? money(product.promotionalPrice ?? product.price, product.pricingStatus) : money(product.promotionalPrice ?? product.price, product.pricingStatus);
     lines.push(price ? `Precio: ${price}.` : "El precio está pendiente de confirmación.");
     if (variant) {
+      if (variant.sku) lines.push(`SKU: ${variant.sku}.`);
       const sizes = catalogVariantSizes(variant);
       if (sizes.length) lines.push(`Tallas disponibles: ${sizes.join(", ")}.${record.selectedSize ? ` Seleccionaste ${record.selectedSize}.` : ""}`);
       else lines.push("No tengo tallas confirmadas para esta variante.");
-      if (typeof variant.availableQuantity === "number") lines.push(`Disponibilidad registrada: ${variant.availableQuantity} unidades.`);
+      if (record.selectedSize) {
+        if (typeof record.availability?.availableQuantity === "number") lines.push(`Disponibilidad talla ${record.selectedSize}: ${record.availability.availableQuantity} unidades.`);
+        if (record.availability?.available === false) lines.push(`La talla ${record.selectedSize} no tiene disponibilidad para reservar en este momento.`);
+      } else if (typeof variant.availableQuantity === "number") lines.push(`Disponibilidad total del color: ${variant.availableQuantity} unidades. Consultaré el stock de la talla que elijas.`);
     }
     if (product.characteristics?.length && /bolsillos|elegante|manga|jogger|fresc|detalle|caracter/i.test(message)) lines.push(product.characteristics.join(" · "));
     if (/cambio/i.test(message)) lines.push(product.exchangePolicy?.conditions ?? "Aún no tengo una política de cambios confirmada para este modelo.");
@@ -128,9 +132,10 @@ export function catalogConversationResponse(result, message = "", previous = {})
     if (sizeHelp) lines.push(sizeHelp);
     else if (!variant) lines.push("¿Cuál color te gustaría ver?");
     else if (!record.selectedSize) lines.push("¿Qué talla buscas? También puedo ayudarte con la guía de medidas planas.");
-    else lines.push("¿Quieres agregarlo al pedido?");
+    else if (record.availability?.available !== false) lines.push("¿Quieres agregarlo al pedido?");
     const image = variant && [variant.imageUrl, ...(variant.images ?? []).map(item => item.url)].map(safeCatalogImageUrl).find(Boolean);
-    return { reply: lines.join("\n\n"), selection, ...(image ? { image: { type: "image", url: image, caption: `${product.name} · ${variant.color ?? variant.name}`, alt: `${product.name} ${variant.color ?? variant.name}` } } : {}) };
+    const caption = variant ? [`${product.name} · ${variant.color ?? variant.name}`, ...(variant.sku ? [`SKU: ${variant.sku}.`] : []), price ? `Precio: ${price}.` : "Precio pendiente de confirmación.", `Tallas disponibles: ${catalogVariantSizes(variant).join(", ") || "por confirmar"}.`].join("\n").slice(0, 1024) : undefined;
+    return { reply: lines.join("\n\n"), selection, ...(image ? { image: { type: "image", url: image, caption, alt: `${product.name} ${variant.color ?? variant.name}` } } : {}) };
   }
   if (record?.kind === "order-draft") return { reply: `Tu pedido quedó en borrador 💙\n${record.selectedProduct.name} · ${record.selectedVariant.color ?? record.selectedVariant.name} · talla ${record.selectedSize} · ${record.quantity} unidad(es).${record.order.total ? `\nTotal: ${money(record.order.total, "READY")}.` : ""}\n\nEl pago aún no está confirmado. Tu comprobante quedará pendiente de revisión de FLOES.`, selection: { ...previous, productId: record.selectedProduct.productId, variantId: record.selectedVariant.variantId, color: record.selectedVariant.color ?? record.selectedVariant.name, size: record.selectedSize, customerId: record.customerId, orderId: record.order.orderId } };
   if (record?.kind === "delivery-collection") {

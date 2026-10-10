@@ -1,5 +1,5 @@
 import type { ToolDefinition, ToolExecutionContext } from "@gano-bot/ai-core/tools-engine";
-import type { CommerceDeliveryAddress, CommercePort, CommerceProductDetails, CommerceProductVariant, CommerceRequestContext } from "./contracts.js";
+import type { CommerceAvailability, CommerceDeliveryAddress, CommercePort, CommerceProductDetails, CommerceProductVariant, CommerceRequestContext } from "./contracts.js";
 
 export const CATALOG_TOOL_IDS = Object.freeze({ consultCatalog: "commerce.consultCatalog", prepareCustomerOrder: "commerce.prepareCustomerOrder", updateOrderDelivery: "commerce.updateOrderDelivery", recordOrderFollowUp: "commerce.recordOrderFollowUp" });
 
@@ -19,7 +19,8 @@ export function availableCatalogVariants(product: CommerceProductDetails): reado
 }
 
 export function catalogVariantSizes(variant: CommerceProductVariant): readonly string[] {
-  return Object.freeze([...new Set([...(variant.sizes ?? []), ...(variant.size ? [variant.size] : [])].map(size => size.trim()).filter(Boolean))]);
+  const sizes = variant.sizeAvailability ? variant.sizeAvailability.filter(item => item.available !== false && item.availableQuantity > 0).map(item => item.size) : [...(variant.sizes ?? []), ...(variant.size ? [variant.size] : [])];
+  return Object.freeze([...new Set(sizes.map(size => size.trim()).filter(Boolean))]);
 }
 
 export function safeCatalogImageUrl(value: unknown): string | undefined {
@@ -40,6 +41,7 @@ export interface CatalogConsultation {
   readonly requestedColor?: string;
   readonly selectedSize?: string;
   readonly requestedSize?: string;
+  readonly availability?: CommerceAvailability;
   readonly selectionError?: "color-unavailable" | "size-unavailable" | "ambiguous-variant";
 }
 
@@ -62,7 +64,8 @@ export async function consultCatalog(port: CommercePort, context: CommerceReques
   const sizedMatches = input.size ? matches.filter(variant => catalogVariantSizes(variant).some(size => normalizeCatalogValue(size) === normalizeCatalogValue(input.size ?? ""))) : matches;
   const selectionError = input.color && matches.length === 0 ? "color-unavailable" : input.size && input.color && sizedMatches.length === 0 ? "size-unavailable" : sizedMatches.length > 1 && !input.size ? "ambiguous-variant" : undefined;
   const selectedVariant = sizedMatches.length === 1 ? sizedMatches[0] : matches.length > 1 && !input.size && matches[0] ? Object.freeze({ ...matches[0], sizes: Object.freeze([...new Set(matches.flatMap(catalogVariantSizes))]), availableQuantity: matches.every(item => typeof item.availableQuantity === "number") ? matches.reduce((sum, item) => sum + (item.availableQuantity ?? 0), 0) : undefined }) : undefined;
-  return Object.freeze({ kind: "catalog", products: Object.freeze(products), selectedProduct, ...(selectedVariant ? { selectedVariant } : {}), ...(input.color ? { requestedColor: input.color } : {}), ...(input.size ? { requestedSize: input.size } : {}), ...(input.size && selectedVariant ? { selectedSize: input.size } : {}), ...(selectionError ? { selectionError } : {}) });
+  const availability = input.size && selectedVariant ? await port.checkAvailability(context, { productId: selectedProduct.productId, variantId: selectedVariant.variantId, size: input.size, quantity: 1 }) : undefined;
+  return Object.freeze({ kind: "catalog", products: Object.freeze(products), selectedProduct, ...(selectedVariant ? { selectedVariant } : {}), ...(input.color ? { requestedColor: input.color } : {}), ...(input.size ? { requestedSize: input.size } : {}), ...(input.size && selectedVariant ? { selectedSize: input.size } : {}), ...(availability ? { availability } : {}), ...(selectionError ? { selectionError } : {}) });
 }
 
 const stringSchema = Object.freeze({ type: "string", minLength: 1 });
@@ -92,7 +95,7 @@ export function createCatalogTools(port: CommercePort, tenantId: string, assista
         if (!product || !variant || !catalogVariantSizes(variant).some(item => normalizeCatalogValue(item) === normalizeCatalogValue(size))) throw new Error("The selected product, variant or size is unavailable.");
         const price = variant.promotionalPrice ?? variant.price ?? product.promotionalPrice ?? product.price;
         if (!price || variant.pricingStatus === "PENDING" || (!variant.price && product.pricingStatus === "PENDING")) throw new Error("The selected price requires human confirmation.");
-        const availability = await port.checkAvailability(base, { productId, variantId, quantity });
+        const availability = await port.checkAvailability(base, { productId, variantId, size, quantity });
         if (!availability.available || (availability.availableQuantity !== undefined && availability.availableQuantity < quantity)) throw new Error("The requested quantity is unavailable.");
         const customerId = text(args.customerId);
         const phone = text(args.phone);

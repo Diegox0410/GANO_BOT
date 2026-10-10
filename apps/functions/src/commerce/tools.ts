@@ -147,6 +147,7 @@ export function createCommerceTools(
           properties: Object.freeze({
             productId: stringSchema,
             variantId: stringSchema,
+            size: stringSchema,
             quantity: Object.freeze({ type: "number", minimum: 1 }),
           }),
         }),
@@ -158,6 +159,7 @@ export function createCommerceTools(
             {
               productId: stringValue(args.productId) ?? "",
               variantId: stringValue(args.variantId),
+              size: stringValue(args.size),
               quantity: numberValue(args.quantity),
             },
           );

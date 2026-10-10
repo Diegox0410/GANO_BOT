@@ -73,6 +73,12 @@ export interface CommerceProductVariant {
   readonly active?: boolean;
   readonly size?: string;
   readonly sizes?: readonly string[];
+  readonly sizeAvailability?: readonly {
+    readonly size: string;
+    readonly availableQuantity: number;
+    readonly available?: boolean;
+    readonly availabilityStatus?: string;
+  }[];
   readonly promotionalPrice?: CommerceMoney | null;
 }
 
@@ -81,6 +87,7 @@ export interface CommerceProductImage { readonly url: string; readonly alt: stri
 export interface CommerceAvailability {
   readonly productId: string;
   readonly variantId?: string;
+  readonly size?: string;
   readonly available: boolean;
   readonly availableQuantity?: number;
   readonly reason?: string;
@@ -232,7 +239,7 @@ export interface CommercePort {
 
   checkAvailability(
     context: CommerceRequestContext,
-    input: { readonly productId: string; readonly variantId?: string; readonly quantity?: number },
+    input: { readonly productId: string; readonly variantId?: string; readonly size?: string; readonly quantity?: number },
   ): Promise<CommerceAvailability>;
 
   createOrUpdateCustomer(

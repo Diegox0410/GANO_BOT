@@ -1,6 +1,7 @@
 import { AIChatProviderRegistry } from "../packages/ai-core/dist/chat/registry.js";
 import { createHash } from "node:crypto";
 import { catalogConversationCall, catalogConversationResponse, readCatalogSelection } from "./floes-catalog-conversation.mjs";
+import { resolveHostedFirestoreCollections } from "./hosted-firestore-collections.mjs";
 
 import {
   KnowledgeManagerService,
@@ -575,6 +576,7 @@ function answerFromKnowledge({
 }
 
 async function createHostedRuntime(commerceTenantId) {
+  const firestoreCollections = resolveHostedFirestoreCollections();
   /*
    * =========================================================
    * KNOWLEDGE MANAGER — PERSISTENCIA FIRESTORE
@@ -604,6 +606,7 @@ async function createHostedRuntime(commerceTenantId) {
   const knowledgeRepository =
     new FirestoreKnowledgeManagerRepository(
       firestore,
+      firestoreCollections.knowledgeRoot,
     );
 
   const browserKnowledgeProcessor =
@@ -613,6 +616,8 @@ const knowledgeProcessor =
   new FirestoreKnowledgeDocumentProcessor(
     firestore,
     browserKnowledgeProcessor,
+    undefined,
+    firestoreCollections.knowledgeChunks,
   );
   /*
    * El generador sigue siendo necesario para los recursos
@@ -1314,6 +1319,7 @@ manager.create({
     new StudioControlPlane(
       new FirestoreStudioRepository(
         firestore,
+        firestoreCollections.studio,
       ),
       (requestedTenantId, requestedAssistantId) =>
         registry
@@ -1332,16 +1338,19 @@ manager.create({
   const conversations =
     new FirestoreConversationRepository(
       firestore,
+      firestoreCollections.conversations,
     );
 
   const audit =
     new FirestoreRequestAuditSink(
       firestore,
+      firestoreCollections.audit,
     );
 
   const rateLimiter =
     new FirestoreRateLimiter(
       firestore,
+      firestoreCollections.rateLimits,
     );
 
   const toolServices =
@@ -1530,6 +1539,7 @@ manager.create({
                     customerPhone: input.customer.phone,
                     ...(input.customer.name ? { customerName: input.customer.name } : {}),
                     ...(input.paymentProofUrl ? { paymentProofUrl: input.paymentProofUrl } : {}),
+                    ...(input.paymentProofReference ? { paymentProofReference: input.paymentProofReference } : {}),
                   },
               }),
           },
@@ -1564,7 +1574,9 @@ manager.create({
     if (commerceTenantId === "tenant-floes" && process.env.FLOES_WHATSAPP_MEDIA === "true" && typeof payload?.data?.message?.metadata?.commerceImage === "string") {
       try { image = JSON.parse(payload.data.message.metadata.commerceImage); } catch { image = undefined; }
     }
-    return Object.freeze({ reply: reply.trim(), ...(image ? { messages: Object.freeze([Object.freeze(image), Object.freeze({ type: "text", text: reply.trim() })]) } : {}) });
+    const selection = readCatalogSelection([payload.data.message]);
+    const commerce = Object.freeze({ tenantId: commerceTenantId, customerId: identityResult.output?.customerId, conversationId, requestId, correlationId, ...Object.fromEntries(Object.entries(selection).filter(([key]) => ["productId", "variantId", "color", "size", "orderId", "orderStatus"].includes(key))) });
+    return Object.freeze({ reply: reply.trim(), commerce, ...(image ? { messages: Object.freeze([Object.freeze(image), Object.freeze({ type: "text", text: reply.trim() })]) } : {}) });
   }
 
   return Object.freeze({
