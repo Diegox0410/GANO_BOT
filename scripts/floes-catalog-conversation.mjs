@@ -113,8 +113,14 @@ export function catalogConversationResponse(result, message = "", previous = {})
     if (record.selectionError === "color-unavailable") lines.push(`No encuentro ${record.requestedColor} disponible para este modelo.`);
     if (record.selectionError === "size-unavailable") lines.push("Esa talla no aparece disponible para el color seleccionado.");
     if (!variant && availableColors.length) lines.push(`Colores disponibles:\n${availableColors.map(color => `• ${color}`).join("\n")}`);
-    const price = variant?.pricingStatus === "PENDING" ? undefined : variant ? money(variant.promotionalPrice ?? variant.price, variant.pricingStatus ?? product.pricingStatus) ?? money(product.promotionalPrice ?? product.price, product.pricingStatus) : money(product.promotionalPrice ?? product.price, product.pricingStatus);
-    lines.push(price ? `Precio: ${price}.` : "El precio está pendiente de confirmación.");
+    const pricingStatus = variant?.pricingStatus ?? product.pricingStatus;
+    const regularPrice = pricingStatus === "PENDING" ? undefined : variant ? money(variant.regularPrice ?? variant.price, pricingStatus) ?? money(product.price, product.pricingStatus) : money(product.price, product.pricingStatus);
+    const promotionalPrice = pricingStatus === "PENDING" ? undefined : money(variant?.promotionalPrice ?? product.promotionalPrice, pricingStatus);
+    const price = promotionalPrice ?? regularPrice;
+    const priceLines = regularPrice && promotionalPrice && regularPrice !== promotionalPrice
+      ? [`Precio: ${regularPrice}.`, `Promoción: ${promotionalPrice}.`]
+      : [price ? `Precio: ${price}.` : "El precio está pendiente de confirmación."];
+    lines.push(...priceLines);
     if (variant) {
       if (variant.sku) lines.push(`SKU: ${variant.sku}.`);
       const sizes = catalogVariantSizes(variant);
@@ -134,7 +140,7 @@ export function catalogConversationResponse(result, message = "", previous = {})
     else if (!record.selectedSize) lines.push("¿Qué talla buscas? También puedo ayudarte con la guía de medidas planas.");
     else if (record.availability?.available !== false) lines.push("¿Quieres agregarlo al pedido?");
     const image = variant && [variant.imageUrl, ...(variant.images ?? []).map(item => item.url)].map(safeCatalogImageUrl).find(Boolean);
-    const caption = variant ? [`${product.name} · ${variant.color ?? variant.name}`, ...(variant.sku ? [`SKU: ${variant.sku}.`] : []), price ? `Precio: ${price}.` : "Precio pendiente de confirmación.", `Tallas disponibles: ${catalogVariantSizes(variant).join(", ") || "por confirmar"}.`].join("\n").slice(0, 1024) : undefined;
+    const caption = variant ? [`${product.name} · ${variant.color ?? variant.name}`, ...(variant.sku ? [`SKU: ${variant.sku}.`] : []), ...priceLines, `Tallas disponibles: ${catalogVariantSizes(variant).join(", ") || "por confirmar"}.`].join("\n").slice(0, 1024) : undefined;
     return { reply: lines.join("\n\n"), selection, ...(image ? { image: { type: "image", url: image, caption, alt: `${product.name} ${variant.color ?? variant.name}` } } : {}) };
   }
   if (record?.kind === "order-draft") return { reply: `Tu pedido quedó en borrador 💙\n${record.selectedProduct.name} · ${record.selectedVariant.color ?? record.selectedVariant.name} · talla ${record.selectedSize} · ${record.quantity} unidad(es).${record.order.total ? `\nTotal: ${money(record.order.total, "READY")}.` : ""}\n\nEl pago aún no está confirmado. Tu comprobante quedará pendiente de revisión de FLOES.`, selection: { ...previous, productId: record.selectedProduct.productId, variantId: record.selectedVariant.variantId, color: record.selectedVariant.color ?? record.selectedVariant.name, size: record.selectedSize, customerId: record.customerId, orderId: record.order.orderId } };

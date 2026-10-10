@@ -67,6 +67,7 @@ export interface CommerceProductVariant {
   readonly pricingStatus?: "PENDING" | "READY";
   readonly available: boolean;
   readonly availableQuantity?: number;
+  readonly regularPrice?: CommerceMoney | null;
   readonly images?: readonly CommerceProductImage[];
   readonly fulfillmentMode?: string;
   readonly imageUrl?: string;

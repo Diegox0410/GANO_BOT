@@ -43,6 +43,17 @@ test("selección contextual normaliza color, devuelve imagen real y precio de la
   assert.match(response.image.caption, /Tallas disponibles: S, M/);
 });
 
+test("imagen y respuesta muestran precio regular y promoción reales", async () => {
+  const promotionalWine = { ...wine, price: { amount: 34.99, currency: "USD" }, regularPrice: { amount: 39.99, currency: "USD" }, promotionalPrice: { amount: 34.99, currency: "USD" } };
+  const promotionalProduct = { ...product, price: { amount: 39.99, currency: "USD" }, promotionalPrice: { amount: 34.99, currency: "USD" }, variants: [promotionalWine] };
+  const result = await consultCatalog(fakePort({ async getProductDetails() { return promotionalProduct; } }), context, { productId: "daniela", color: "Vino" });
+  const response = catalogConversationResponse(result, "Vino");
+  assert.match(response.reply, /Precio: 39\.99 USD/);
+  assert.match(response.reply, /Promoción: 34\.99 USD/);
+  assert.match(response.image.caption, /Precio: 39\.99 USD/);
+  assert.match(response.image.caption, /Promoción: 34\.99 USD/);
+});
+
 test("stock de talla se consulta en Chopify y nunca se sustituye por el total del color", async () => {
   const calls = [];
   const port = fakePort({ async checkAvailability(c, input) { calls.push(input); return { productId: input.productId, variantId: input.variantId, size: input.size, available: true, availableQuantity: 9 }; } });
