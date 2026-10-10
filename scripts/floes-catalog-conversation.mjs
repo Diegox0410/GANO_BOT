@@ -20,7 +20,7 @@ export function catalogConversationCall(message, messages = [], metadata = {}) {
   const current = normalized(message);
   const customerId = metadata.customerId ?? selection.customerId;
   if (selection.orderId && (safeCatalogImageUrl(metadata.paymentProofUrl) || typeof metadata.paymentProofReference === "string" && /^meta-whatsapp:\/\/[0-9]{5,32}\/media\/[A-Za-z0-9_-]{1,256}$/.test(metadata.paymentProofReference))) return { name: "commerce.attachPaymentProof", arguments: { orderId: selection.orderId, ...(safeCatalogImageUrl(metadata.paymentProofUrl) ? { proofUrl: metadata.paymentProofUrl } : {}), ...(metadata.paymentProofReference ? { externalReference: metadata.paymentProofReference } : {}) } };
-  const size = (message.match(/\b(?:talla|soy\s+talla|size)\s*[:=]?\s*([a-z0-9]+)\b/i)?.[1] ?? message.trim().match(/^(XS|S|M|L|XL)[.!?]?$/i)?.[1])?.toUpperCase();
+  const size = (message.match(/\b(?:talla|soy\s+talla|size)\b\s*[:=]?\s*([a-z0-9]+)\b/i)?.[1] ?? message.trim().match(/^(XS|S|M|L|XL)[.!?]?$/i)?.[1])?.toUpperCase();
   if (selection.orderId && customerId && selection.orderStatus === "delivered" && /\b(?:recibi|recibido|satisfecha|contenta|encanto|novedad|problema|reclamo|humano|persona)\b/.test(current)) return { name: "commerce.recordOrderFollowUp", arguments: { orderId: selection.orderId, customerId, outcome: /novedad|problema|reclamo/.test(current) ? "ISSUE" : /humano|persona/.test(current) ? "HUMAN_REQUESTED" : /satisfecha|contenta|encanto/.test(current) ? "SATISFIED" : "RECEIVED", note: message.slice(0, 500) } };
   const deliveryMode = /servientrega/.test(current) ? "SERVIENTREGA" : /retiro|recoger/.test(current) ? "PICKUP" : /entrega presencial|entrega local/.test(current) ? "LOCAL_DELIVERY" : selection.deliveryPending === "true" ? selection.deliveryMode : undefined;
   if (selection.orderId && customerId && deliveryMode) {
@@ -47,7 +47,7 @@ export function catalogConversationCall(message, messages = [], metadata = {}) {
   const named = message.match(/\b(?:modelo|scrub)\s+(.+?)(?:\s+(?:en|color|talla)\s+|[?.!]|$)/i)?.[1]?.trim();
   let query = named ?? message.replace(/^[¿¡\s]*(?:hola[,!]?\s*)?(?:quiero|me interesa|estoy interesada en|tienen|ensename|enséñame|muestrame|muéstrame|ver|conocer)\s+(?:ver\s+)?(?:el\s+|la\s+)?/i, "").replace(/[?!.,]+$/g, "").trim();
   const explicitColor = (message.match(/\bcolor\s+(.+?)(?:\s+talla\s+|[?.!]|$)/i)?.[1] ?? message.match(/\ben\s+(.+?)(?:\s+talla\s+|[?.!]|$)/i)?.[1])?.trim();
-  const asksAnother = /^(?:quiero|me interesa|tienen|ensename|muestrame)\s+/.test(current) && !/^(?:lo quiero|quiero este|quiero esta)/.test(current);
+  const asksAnother = /^(?:quiero|me interesa|tienen|ensename|muestrame)\s+/.test(current) && !/^(?:lo quiero|quiero este|quiero esta)/.test(current) && !/\b(?:guia|talla|tallas|medida|medidas|precio|color|colores)\b/.test(current);
   const follows = selection.productId && !named && !requestsCatalog && !asksAnother && (size || explicitColor || /\b(?:cuanto|cuesta|precio|colores|tallas|medida|guia|recomienda|recomiendas|bolsillos|fresco|elegante|manga|jogger|cambio|entrega|lo quiero|quiero este|pecho|cintura|cadera|plana|prenda)\b/.test(current) || current.split(/\s+/).length <= 3);
   if (follows) {
     const asksInfo = /\b(?:cuanto|cuesta|precio|colores|tallas|medida|guia|recomienda|recomiendas|bolsillos|fresco|elegante|manga|jogger|cambio|entrega|lo quiero|quiero este|cm|centimetros|pecho|cintura|cadera)\b/.test(current);

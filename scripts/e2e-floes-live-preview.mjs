@@ -12,7 +12,7 @@ const { values } = parseArgs({ options: {
 } });
 const url = new URL(values["preview-url"] ?? "");
 assert.equal(url.protocol, "https:", "Preview URL must use HTTPS.");
-assert.match(url.hostname, /^gano-bot-web-[a-z0-9-]+\.vercel\.app$/, "Use an immutable GanoBot Preview deployment URL.");
+assert.match(url.hostname, /^gano-bot(?:-web)?-[a-z0-9-]+\.vercel\.app$/, "Use an immutable GanoBot Preview deployment URL.");
 const phone = values["customer-phone"]?.replace(/\D/g, "");
 assert.match(phone ?? "", /^\d{8,15}$/, "Provide a controlled Preview customer phone.");
 const runId = values["run-id"];
@@ -27,7 +27,10 @@ const port = createChopifyHttpAdapterFromEnv();
 let commerce;
 async function send(step, text) {
   const response = await fetch(new URL("/api/live", url), {
-    method: "POST", headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+    method: "POST", headers: {
+      authorization: `Bearer ${bearer}`, "content-type": "application/json",
+      ...(process.env.GANOBOT_VERCEL_PROTECTION_BYPASS_SECRET ? { "x-vercel-protection-bypass": process.env.GANOBOT_VERCEL_PROTECTION_BYPASS_SECRET } : {}),
+    },
     body: JSON.stringify({ tenantId: "tenant-floes", channel: "WHATSAPP", providerMessageId: `preview-${runId}-${step}`, customer: { phone, name: "Cliente piloto Preview" }, text }),
     signal: AbortSignal.timeout(90_000),
   });
@@ -39,10 +42,11 @@ async function send(step, text) {
   return payload;
 }
 
-const model = await send("model", "Hola, quiero ver el modelo Daniela");
+const model = await send("model", "Quiero Daniela");
 assert.match(model.reply, /Daniela/);
-assert.match(model.reply, /Colores disponibles/);
+assert.match(model.reply, /Colores disponibles/i);
 assert.match(model.reply, /Vino/);
+assert.equal((model.reply.match(/^• /gm) ?? []).length, 13, "Daniela must show all 13 real catalog colors.");
 const color = await send("color", "Vino");
 assert.match(color.reply, /FLOES-DAN-11/);
 const image = color.messages?.find(message => message.type === "image");
@@ -83,7 +87,10 @@ if (values["create-order"]) {
   for (const size of ["XS", "S", "L", "XL"]) assert.equal(stockAfter[size], stockBefore[size]);
   if (values["attach-test-proof"]) {
     const response = await fetch(new URL("/api/live", url), {
-      method: "POST", headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json" },
+      method: "POST", headers: {
+        authorization: `Bearer ${bearer}`, "content-type": "application/json",
+        ...(process.env.GANOBOT_VERCEL_PROTECTION_BYPASS_SECRET ? { "x-vercel-protection-bypass": process.env.GANOBOT_VERCEL_PROTECTION_BYPASS_SECRET } : {}),
+      },
       body: JSON.stringify({ tenantId: "tenant-floes", channel: "WHATSAPP", providerMessageId: `preview-${runId}-proof`, customer: { phone, name: "Cliente piloto Preview" }, text: "Envío mi comprobante de pago", paymentProofReference: `meta-whatsapp://999999999999/media/preview_${runId}` }), signal: AbortSignal.timeout(90_000),
     });
     assert.equal(response.status, 200);

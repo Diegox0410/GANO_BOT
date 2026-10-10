@@ -45,6 +45,17 @@ export interface CatalogConsultation {
   readonly selectionError?: "color-unavailable" | "size-unavailable" | "ambiguous-variant";
 }
 
+function exactCatalogMatch(products: readonly CommerceProductDetails[], query: string | undefined): CommerceProductDetails | undefined {
+  const queryKey = normalizeCatalogValue(query ?? "");
+  if (!queryKey) return undefined;
+  const matches = products.filter(product => {
+    const nameKey = normalizeCatalogValue(product.name);
+    const idKey = normalizeCatalogValue(product.productId);
+    return nameKey === queryKey || nameKey.endsWith(`-${queryKey}`) || idKey.endsWith(`-${queryKey}`);
+  });
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
 export async function consultCatalog(port: CommercePort, context: CommerceRequestContext, input: { readonly query?: string; readonly productId?: string; readonly color?: string; readonly size?: string }): Promise<CatalogConsultation> {
   const products: CommerceProductDetails[] = [];
   if (input.productId) {
@@ -57,7 +68,7 @@ export async function consultCatalog(port: CommercePort, context: CommerceReques
       if (product) products.push(product);
     }
   }
-  const selectedProduct = products.length === 1 ? products[0] : undefined;
+  const selectedProduct = products.length === 1 ? products[0] : exactCatalogMatch(products, input.query);
   if (!selectedProduct) return Object.freeze({ kind: "catalog", products: Object.freeze(products) });
   const variants = availableCatalogVariants(selectedProduct);
   const matches = input.color ? variants.filter(variant => normalizeCatalogValue(variant.color ?? "") === normalizeCatalogValue(input.color ?? "")) : [];
@@ -84,26 +95,59 @@ export function createCatalogTools(port: CommercePort, tenantId: string, assista
     {
       descriptor: descriptor(CATALOG_TOOL_IDS.prepareCustomerOrder, "Crea cliente, oportunidad y borrador únicamente con producto, variante, talla y precio disponibles verificados. No confirma pagos.", tenantId, assistantId, { productId: stringSchema, variantId: stringSchema, size: stringSchema, quantity: { type: "integer", minimum: 1, maximum: 100 }, customerId: stringSchema, name: stringSchema, phone: stringSchema, channel: stringSchema, source: stringSchema, campaignId: stringSchema }, ["productId", "variantId", "size", "quantity"], "medium"),
       handler: { async execute(args, context) {
-        const base = contextFor(context, tenantId, assistantId, "prepareCustomerOrder");
-        const productId = text(args.productId) ?? "";
-        const variantId = text(args.variantId) ?? "";
-        const size = text(args.size) ?? "";
-        const quantity = typeof args.quantity === "number" ? args.quantity : 0;
-        if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) throw new Error("Invalid order quantity.");
-        const product = await port.getProductDetails(base, { productId });
-        const variant = product && availableCatalogVariants(product).find(item => item.variantId === variantId);
-        if (!product || !variant || !catalogVariantSizes(variant).some(item => normalizeCatalogValue(item) === normalizeCatalogValue(size))) throw new Error("The selected product, variant or size is unavailable.");
-        const price = variant.promotionalPrice ?? variant.price ?? product.promotionalPrice ?? product.price;
-        if (!price || variant.pricingStatus === "PENDING" || (!variant.price && product.pricingStatus === "PENDING")) throw new Error("The selected price requires human confirmation.");
-        const availability = await port.checkAvailability(base, { productId, variantId, size, quantity });
-        if (!availability.available || (availability.availableQuantity !== undefined && availability.availableQuantity < quantity)) throw new Error("The requested quantity is unavailable.");
-        const customerId = text(args.customerId);
-        const phone = text(args.phone);
-        if (!customerId && !phone) throw new Error("Customer identity is required before creating an order.");
-        const customer = await port.createOrUpdateCustomer({ ...base, idempotencyKey: `${base.idempotencyKey}:customer` }, { customerId, name: text(args.name), phone, channel: text(args.channel) });
-        const opportunity = await port.createOpportunity({ ...base, idempotencyKey: `${base.idempotencyKey}:opportunity` }, { customerId: customer.customerId, title: `${product.name} · ${variant.color ?? variant.name} · ${size}`, source: text(args.source), campaignId: text(args.campaignId), productIds: Object.freeze([productId]) });
-        const order = await port.createOrderDraft({ ...base, idempotencyKey: `${base.idempotencyKey}:draft` }, { customerId: customer.customerId, opportunityId: opportunity.opportunityId, lines: Object.freeze([{ productId, variantId, size, quantity }]) });
-        return Object.freeze({ kind: "order-draft", customerId: customer.customerId, opportunityId: opportunity.opportunityId, order, selectedProduct: product, selectedVariant: variant, selectedSize: size, quantity });
+        let stage = "context";
+        try {
+          const base = contextFor(context, tenantId, assistantId, "prepareCustomerOrder");
+          const productId = text(args.productId) ?? "";
+          const variantId = text(args.variantId) ?? "";
+          const size = text(args.size) ?? "";
+          const quantity = typeof args.quantity === "number" ? args.quantity : 0;
+          if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) throw new Error("Invalid order quantity.");
+          stage = "load-product";
+          const product = await port.getProductDetails(base, { productId });
+          const variant = product && availableCatalogVariants(product).find(item => item.variantId === variantId);
+          if (!product || !variant || !catalogVariantSizes(variant).some(item => normalizeCatalogValue(item) === normalizeCatalogValue(size))) throw new Error("The selected product, variant or size is unavailable.");
+          stage = "validate-price";
+          const price = variant.promotionalPrice ?? variant.price ?? product.promotionalPrice ?? product.price;
+          if (!price || variant.pricingStatus === "PENDING" || (!variant.price && product.pricingStatus === "PENDING")) throw new Error("The selected price requires human confirmation.");
+          stage = "check-availability";
+          const availability = await port.checkAvailability(base, { productId, variantId, size, quantity });
+          if (!availability.available || (availability.availableQuantity !== undefined && availability.availableQuantity < quantity)) {
+            console.error("[FLOES Commerce] order-availability-rejected", {
+              productId,
+              variantId,
+              size,
+              quantity,
+              available: availability.available,
+              ...(typeof availability.availableQuantity === "number" ? { availableQuantity: availability.availableQuantity } : {}),
+              ...(typeof availability.reason === "string" ? { reason: availability.reason } : {}),
+            });
+            throw new Error("The requested quantity is unavailable.");
+          }
+          const customerId = text(args.customerId);
+          const phone = text(args.phone);
+          if (!customerId && !phone) throw new Error("Customer identity is required before creating an order.");
+          stage = "resolve-customer";
+          const customer = await port.createOrUpdateCustomer({ ...base, idempotencyKey: `${base.idempotencyKey}:customer` }, { customerId, name: text(args.name), phone, channel: text(args.channel) });
+          stage = "create-opportunity";
+          const opportunity = await port.createOpportunity({ ...base, idempotencyKey: `${base.idempotencyKey}:opportunity` }, { customerId: customer.customerId, title: `${product.name} · ${variant.color ?? variant.name} · ${size}`, source: text(args.source), campaignId: text(args.campaignId), productIds: Object.freeze([productId]) });
+          stage = "create-order-draft";
+          const order = await port.createOrderDraft({ ...base, idempotencyKey: `${base.idempotencyKey}:draft` }, { customerId: customer.customerId, opportunityId: opportunity.opportunityId, lines: Object.freeze([{ productId, variantId, size, quantity }]) });
+          return Object.freeze({ kind: "order-draft", customerId: customer.customerId, opportunityId: opportunity.opportunityId, order, selectedProduct: product, selectedVariant: variant, selectedSize: size, quantity });
+        } catch (error) {
+          const details = error && typeof error === "object" ? error as { name?: unknown; status?: unknown; code?: unknown } : {};
+          console.error("[FLOES Commerce] order-preparation-failed", {
+            stage,
+            ...(typeof details.name === "string" ? { name: details.name } : {}),
+            ...(typeof details.status === "number" ? { status: details.status } : {}),
+            ...(typeof details.code === "string" && /^[A-Z0-9_]{1,80}$/.test(details.code) ? { code: details.code } : {}),
+            ...(error instanceof Error && error.message === "The selected product, variant or size is unavailable." ? { reason: "catalog-selection-invalid" } : {}),
+            ...(error instanceof Error && error.message === "The selected price requires human confirmation." ? { reason: "price-unconfirmed" } : {}),
+            ...(error instanceof Error && error.message === "The requested quantity is unavailable." ? { reason: "inventory-unavailable" } : {}),
+            ...(error instanceof Error && error.message === "Customer identity is required before creating an order." ? { reason: "customer-identity-missing" } : {}),
+          });
+          throw error;
+        }
       } },
     },
     ...(port.updateOrderDelivery ? [{

@@ -76,6 +76,12 @@ function createAssistantMessage(content, createdAt) {
   });
 }
 
+export function mergeHostedCommerceMetadata(request, trustedMetadata) {
+  const requestMetadata = request?.metadata && typeof request.metadata === "object" && !Array.isArray(request.metadata) ? request.metadata : {};
+  const liveMetadata = trustedMetadata && typeof trustedMetadata === "object" && !Array.isArray(trustedMetadata) ? trustedMetadata : {};
+  return Object.freeze({ ...requestMetadata, ...liveMetadata });
+}
+
 function commerceToolCall(message, conversationMessages = []) {
   const productMatch = message.match(/\b(?:producto|productId)\s*[:=]?\s*([\w.-]+)/i);
   const orderMatch = message.match(/\b(?:pedido|orderId)\s*[:=]?\s*([\w.-]+)/i);
@@ -577,6 +583,7 @@ function answerFromKnowledge({
 
 async function createHostedRuntime(commerceTenantId) {
   const firestoreCollections = resolveHostedFirestoreCollections();
+  const activeLiveCommerceMetadata = new Map();
   /*
    * =========================================================
    * KNOWLEDGE MANAGER — PERSISTENCIA FIRESTORE
@@ -1029,6 +1036,8 @@ const knowledgeProcessor =
 
       async generate(request) {
         const createdAt = now();
+        const correlationId = typeof request.metadata?.correlationId === "string" ? request.metadata.correlationId : "";
+        const commerceMetadata = mergeHostedCommerceMetadata(request, activeLiveCommerceMetadata.get(correlationId));
         const lastToolMessage =
           request.messages.findLast(
             (message) =>
@@ -1064,7 +1073,7 @@ const knowledgeProcessor =
             (catalogV2 ? catalogConversationCall : commerceToolCall)(
               userMessage,
               request.messages,
-              request.metadata ?? {},
+              commerceMetadata,
             );
           content =
             "Consultando la fuente comercial autorizada…";
@@ -1514,8 +1523,16 @@ manager.create({
       );
     }
 
-    const chatResponse =
-      await liveApplication.handle(
+    activeLiveCommerceMetadata.set(correlationId, Object.freeze({
+      customerId: identityResult.output?.customerId,
+      customerPhone: input.customer.phone,
+      ...(input.customer.name ? { customerName: input.customer.name } : {}),
+      ...(input.paymentProofUrl ? { paymentProofUrl: input.paymentProofUrl } : {}),
+      ...(input.paymentProofReference ? { paymentProofReference: input.paymentProofReference } : {}),
+    }));
+    let chatResponse;
+    try {
+      chatResponse = await liveApplication.handle(
         new Request(
           "https://gano-bot.internal/v1/chat",
           {
@@ -1535,6 +1552,8 @@ manager.create({
                       "WHATSAPP",
                     providerMessageId:
                       input.providerMessageId,
+                    requestId,
+                    correlationId,
                     customerId: identityResult.output?.customerId,
                     customerPhone: input.customer.phone,
                     ...(input.customer.name ? { customerName: input.customer.name } : {}),
@@ -1545,12 +1564,21 @@ manager.create({
           },
         ),
       );
+    } finally {
+      activeLiveCommerceMetadata.delete(correlationId);
+    }
 
     if (!chatResponse.ok) {
+      let safeErrorCode;
+      try {
+        const failure = await chatResponse.json();
+        const code = failure?.error?.code;
+        if (typeof code === "string" && /^[A-Z0-9_]{1,80}$/.test(code)) safeErrorCode = code;
+      } catch { /* keep the public-safe fallback below */ }
       throw new LiveProcessingError(
         "commerce-assistant",
         chatResponse.status,
-        "Commerce assistant request failed.",
+        `Commerce assistant request failed${safeErrorCode ? ` (${safeErrorCode})` : ""}.`,
       );
     }
 

@@ -730,6 +730,15 @@ export class BackendApplication {
           body.toolConfirmationIds ?? Object.freeze([]),
         ),
       );
+      for (const result of toolResults) {
+        if (result.status === "completed") continue;
+        const code = result.error?.code;
+        console.error("[Backend API] tool-execution-failed", {
+          toolId: result.toolId,
+          status: result.status,
+          ...(typeof code === "string" && /^[A-Z0-9_]{1,80}$/.test(code) ? { code } : {}),
+        });
+      }
       const confirmation = toolResults.find(
         (result) => result.status === "confirmation-required",
       );

@@ -4,7 +4,7 @@ import { consultCatalog, createCatalogTools, CATALOG_TOOL_IDS, safeCatalogImageU
 import { createCommerceRuntimeFromEnv } from "../apps/functions/dist/commerce/runtime.js";
 import { WhatsAppChannelAdapter } from "../apps/functions/dist/channels/whatsapp.js";
 import { catalogConversationCall, catalogConversationResponse } from "../scripts/floes-catalog-conversation.mjs";
-import { getGanoHostedRuntime } from "../scripts/gano-hosted-runtime.mjs";
+import { getGanoHostedRuntime, mergeHostedCommerceMetadata } from "../scripts/gano-hosted-runtime.mjs";
 
 const context = { tenantId: "tenant-floes", assistantId: "commerce-assistant", actorId: "customer-1", conversationId: "conversation-1", requestId: "request-1", correlationId: "correlation-1" };
 
@@ -24,11 +24,39 @@ test("mensaje inicial Meta y CTA storefront llegan al mismo modelo/color/talla r
   assert.deepEqual(catalogConversationCall("Hola").arguments, { query: "" });
 });
 
+test("el provider conserva identidad Live verificada para preparar el borrador", () => {
+  const metadata = mergeHostedCommerceMetadata(
+    { metadata: { correlationId: "whatsapp-message-1", channel: "WHATSAPP" } },
+    { customerId: "customer-1", customerPhone: "15550100100", customerName: "Cliente piloto Preview" },
+  );
+  const call = catalogConversationCall("Lo quiero", history({ productId: "daniela", variantId: "daniela-vino", color: "Vino", size: "M" }), metadata);
+  assert.deepEqual(call.arguments, { productId: "daniela", variantId: "daniela-vino", size: "M", quantity: 1, customerId: "customer-1", phone: "15550100100", name: "Cliente piloto Preview", channel: "WHATSAPP", source: "WHATSAPP" });
+});
+
 test("catálogo resuelve modelo y muestra solamente colores activos disponibles", async () => {
   const result = await consultCatalog(fakePort(), context, { query: "Daniela" });
   const response = catalogConversationResponse(result, "Quiero Daniela");
   assert.match(response.reply, /Vino/); assert.doesNotMatch(response.reply, /Negro|Caqui|pegar notas internas/);
   assert.deepEqual(response.selection, { productId: "daniela", name: "Modelo Daniela" });
+});
+
+test("selecciona el único modelo con nombre exacto cuando Chopify devuelve la lista completa", async () => {
+  const maria = { ...product, productId: "tenant-floes:model:maria-jose", name: "Modelo María José" };
+  const daniela = { ...product, productId: "tenant-floes:model:daniela", name: "Modelo Daniela" };
+  const elite = { ...product, productId: "tenant-floes:model:elite", name: "Modelo Elite" };
+  const results = [maria, daniela, elite];
+  const port = fakePort({
+    async searchProducts() { return results; },
+    async getProductDetails(_context, { productId }) { return results.find(item => item.productId === productId); },
+  });
+  const result = await consultCatalog(port, context, { query: "Daniela" });
+  assert.equal(result.products.length, 3);
+  assert.equal(result.selectedProduct?.productId, daniela.productId);
+  const response = catalogConversationResponse(result, "Quiero Daniela");
+  assert.match(response.reply, /Modelo Daniela/);
+  assert.match(response.reply, /Colores disponibles/);
+  assert.doesNotMatch(response.reply, /Modelo María José|Modelo Elite/);
+  assert.equal(response.selection.productId, daniela.productId);
 });
 
 test("selección contextual normaliza color, devuelve imagen real y precio de la variante", async () => {
@@ -37,6 +65,7 @@ test("selección contextual normaliza color, devuelve imagen real y precio de la
   assert.equal(response.image.url, wine.images[0].url); assert.match(response.reply, /37\.00 USD/); assert.match(response.reply, /S, M/);
   const call = catalogConversationCall("Soy talla M", history(response.selection));
   assert.deepEqual(call.arguments, { productId: "daniela", color: "Vino", size: "M" });
+  assert.deepEqual(catalogConversationCall("Muéstrame la guía de tallas y medidas planas", history(response.selection)).arguments, { productId: "daniela", color: "Vino" });
   for (const size of ["XS", "S", "M", "L", "XL"]) assert.deepEqual(catalogConversationCall(size, history(response.selection)).arguments, { productId: "daniela", color: "Vino", size });
   assert.match(response.image.caption, /Modelo Daniela.*Vino/);
   assert.match(response.image.caption, /37\.00 USD/);
