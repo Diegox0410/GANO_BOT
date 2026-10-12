@@ -101,7 +101,8 @@ test("tallas disponibles usan sizeAvailability autoritativo y omiten agotadas", 
   const result = await consultCatalog(fakePort({ async getProductDetails() { return actualStock; } }), context, { productId: "daniela", color: "Vino" });
   const response = catalogConversationResponse(result, "Vino");
   assert.match(response.reply, /Tallas disponibles: XS, M, L, XL/);
-  assert.match(response.image.caption, /SKU: FLOES-DAN-11/);
+  assert.doesNotMatch(response.reply, /SKU:|FLOES-DAN-/);
+  assert.doesNotMatch(response.image.caption, /SKU:|FLOES-DAN-/);
   assert.match(response.image.caption, /Tallas disponibles: XS, M, L, XL/);
   const exhausted = await consultCatalog(fakePort({ async getProductDetails() { return actualStock; } }), context, { productId: "daniela", color: "Vino", size: "S" });
   assert.equal(exhausted.selectionError, "size-unavailable");
@@ -127,9 +128,30 @@ test("un color o talla inexistente jamás produce una variante o foto inventada"
   assert.equal(missingSize.image, undefined); assert.equal(missingSize.selection.size, undefined);
 });
 
-test("guía compara medidas planas sin duplicar ni prometer ajuste", async () => {
-  const response = catalogConversationResponse(await consultCatalog(fakePort(), context, { productId: "daniela", color: "Vino", size: "M" }), "¿Qué talla recomiendas?");
-  assert.match(response.reply, /pecho 50 cm/); assert.match(response.reply, /cadera 52 cm/); assert.doesNotMatch(response.reply, /pecho 100/); assert.match(response.reply, /sin multiplicarla por dos/); assert.match(response.reply, /entre dos tallas/);
+test("talla recomendada responde progresivamente sin imprimir la tabla", async () => {
+  const response = catalogConversationResponse(await consultCatalog(fakePort(), context, { productId: "daniela", color: "Vino", size: "M" }), "¿Qué talla me recomiendas?");
+  assert.equal(response.reply, "📏 ¿Dudas con tu talla?\n\nDime qué talla usas normalmente o puedo ayudarte comparando las medidas de una prenda que te quede bien.\n\nSi quieres, también puedo mostrarte nuestra guía de tallas 💙");
+});
+
+test("no saber la talla pide comparar una prenda plana sin mostrar tabla completa", async () => {
+  const response = catalogConversationResponse(await consultCatalog(fakePort(), context, { productId: "daniela", color: "Vino" }), "No sé mi talla");
+  assert.equal(response.reply, "No necesitas saber tu talla de memoria 💙 Toma una prenda que te quede bien, extiéndela sobre una superficie plana y mide de lado a lado. ¿Prefieres comparar una blusa o un pantalón?");
+});
+
+test("si pide medidas de M, solo devuelve filas de M y explica medición plana", async () => {
+  const response = catalogConversationResponse(await consultCatalog(fakePort(), context, { productId: "daniela", color: "Vino", size: "M" }), "¿Me das las medidas de la talla M?");
+  assert.match(response.reply, /Blusa · talla M: pecho 50 cm/);
+  assert.match(response.reply, /Pantalón · talla M: cadera 52 cm/);
+  assert.match(response.reply, /sin multiplicar por dos/);
+  assert.doesNotMatch(response.reply, /XS:|S:|L:|XL:|pecho 48 cm|pecho 53 cm/);
+});
+
+test("petición explícita de la guía comparte imagen móvil y caption corto", async () => {
+  const response = catalogConversationResponse(await consultCatalog(fakePort(), context, { productId: "daniela", color: "Vino" }), "Muéstrame las medidas");
+  assert.equal(response.image.url, "https://floes-commerce.vercel.app/images/guia-tallas-floes.png");
+  assert.match(response.image.caption, /Daniela.*Vino/);
+  assert.match(response.image.caption, /prenda en plano/);
+  assert.doesNotMatch(response.reply, /XS:|S: pecho|M: pecho|Blusa:|Pantalón:/);
 });
 
 test("recomendación entre dos tallas utiliza medida plana documentada", async () => {
@@ -195,17 +217,59 @@ test("WhatsApp adapter envía texto, imagen y caption por transport inyectable",
   for (const url of ["http://public.example/image.jpg", "https://localhost/a.jpg", "https://127.0.0.1/a.jpg", "https://u:p@public.example/a.jpg"]) assert.equal(safeCatalogImageUrl(url), undefined);
 });
 
-test("feature flag activa tools de piloto solamente FLOES sin aprobar pagos", () => {
+test("tools de catálogo se activan por defecto solo para FLOES y admiten desactivación explícita", () => {
   const env = { CHOPIFY_COMMERCE_BASE_URL: "https://chopify.example.test", CHOPIFY_COMMERCE_API_TOKEN: "test", FLOES_CATALOG_V2: "true" };
   const floes = createCommerceRuntimeFromEnv("tenant-floes", env); const mg = createCommerceRuntimeFromEnv("tenant-mg", env);
   assert.equal(floes.tools.length, 14); assert.equal(mg.tools.length, 10);
   assert.ok(floes.tools.every(item => !/approvePayment|rejectPayment|markOrder/.test(item.descriptor.id)));
+  assert.equal(createCommerceRuntimeFromEnv("tenant-floes", { ...env, FLOES_CATALOG_V2: undefined }).tools.length, 14);
+  assert.equal(createCommerceRuntimeFromEnv("tenant-floes", { ...env, FLOES_CATALOG_V2: "false" }).tools.length, 10);
+});
+
+test("cambio de modelo y de color limpia selección obsoleta y los colores ambiguos preguntan", () => {
+  const selected = { productId: "daniela", name: "Daniela", variantId: "daniela-vino", color: "Vino", size: "M" };
+  assert.deepEqual(catalogConversationCall("Mejor Elite", history(selected)).arguments, { query: "Elite" });
+  assert.deepEqual(catalogConversationCall("Mejor negro", history(selected)).arguments, { productId: "daniela", color: "Negro", size: "M" });
+  assert.deepEqual(catalogConversationCall("Quiero azul", history(selected)).arguments, { productId: "daniela", size: "M" });
+  assert.deepEqual(catalogConversationCall("Danela").arguments, { query: "Daniela" });
+  assert.deepEqual(catalogConversationCall("vinno", history(selected)).arguments, { productId: "daniela", color: "Vino", size: "M" });
+  assert.deepEqual(catalogConversationCall("Qué características tiene?", history(selected)).arguments, { productId: "daniela", color: "Vino", size: "M" });
+  assert.deepEqual(catalogConversationCall("Qué talla me recomiendas?", history(selected)).arguments, { productId: "daniela", color: "Vino", size: "M" });
+  assert.deepEqual(catalogConversationCall("Soy M", history({ productId: "daniela", name: "Daniela", color: "Vino", variantId: "daniela-vino" })).arguments, { productId: "daniela", color: "Vino", size: "M" });
+  assert.deepEqual(catalogConversationCall("Talla extra small", history(selected)).arguments, { productId: "daniela", color: "Vino", size: "XS" });
+});
+
+test("la respuesta a azul ambiguo ofrece solo los azules reales y pide elegir", () => {
+  const blueProduct = { ...product, variants: [
+    { ...wine, color: "Azul marino" },
+    { ...wine, variantId: "daniela-blue-electric", color: "Azul Electrico" },
+    { ...wine, variantId: "daniela-celeste", color: "Celeste" },
+    { ...wine, variantId: "daniela-negro-real", color: "Negro" },
+  ] };
+  const response = catalogConversationResponse({ kind: "catalog", products: [blueProduct], selectedProduct: blueProduct }, "Quiero azul");
+  assert.match(response.reply, /Azul marino/);
+  assert.match(response.reply, /Azul Electrico/);
+  assert.match(response.reply, /Celeste/);
+  assert.doesNotMatch(response.reply, /Negro/);
+  assert.match(response.reply, /¿Cuál buscas\?/);
+  assert.deepEqual(catalogConversationCall("Quiero azul").arguments, { query: "" });
+  const noModel = catalogConversationResponse({ kind: "catalog", products: [blueProduct] }, "Quiero azul");
+  assert.match(noModel.reply, /Azul marino/);
+  assert.match(noModel.reply, /¿Cuál prefieres y para qué modelo\?/);
 });
 
 test("talla antes de color queda como preferencia y se valida al elegir variante", async () => {
   const response = catalogConversationResponse(await consultCatalog(fakePort(), context, { productId: "daniela", size: "M" }), "Soy talla M");
   assert.equal(response.selection.size, "M"); assert.equal(response.selection.variantId, undefined);
   assert.deepEqual(catalogConversationCall("Vino", history(response.selection)).arguments, { productId: "daniela", color: "Vino", size: "M" });
+});
+
+test("elegir talla M no repite la guía ni vuelve a preguntar la talla", async () => {
+  const result = await consultCatalog(fakePort(), context, { productId: "daniela", color: "Vino", size: "M" });
+  const response = catalogConversationResponse(result, "Talla M");
+  assert.match(response.reply, /Seleccionaste M/);
+  assert.match(response.reply, /¿Quieres agregarlo al pedido\?/);
+  assert.doesNotMatch(response.reply, /¿Qué talla te interesa revisar\?/);
 });
 
 test("colores con SKUs por talla agrupan medidas y resuelven SKU exacto", async () => {
@@ -256,6 +320,7 @@ test("flujo piloto conserva modelo, color, talla, draft, comprobante y estados O
   const proofCall = catalogConversationCall("Comprobante", history(selection), { paymentProofUrl: "https://storage.example.test/proof.jpg" });
   assert.equal(proofCall.name, "commerce.attachPaymentProof");
   assert.equal(catalogConversationCall("Ya pagué, aquí está el comprobante", history(selection), { paymentProofUrl: "https://storage.example.test/proof.jpg" }).name, "commerce.attachPaymentProof");
+  assert.notEqual(catalogConversationCall("Me gusta esta foto", history(selection), { paymentProofReference: "meta-whatsapp://123456789/media/987654321" }).name, "commerce.attachPaymentProof");
   assert.deepEqual(catalogConversationCall("Envío mi comprobante de pago", history(selection), { paymentProofReference: "meta-whatsapp://123456789/media/987654321" }).arguments, { orderId: "order-1", externalReference: "meta-whatsapp://123456789/media/987654321" });
   const proof = catalogConversationResponse({ proofId: "proof-1", orderId: "order-1", status: "pending_review" }, "Comprobante", selection);
   assert.match(proof.reply, /pendiente de revisión/);

@@ -4,7 +4,7 @@ GanoBot consumes the existing Chopify CommercePort over HTTPS. It owns no catalo
 
 ## Activation
 
-Set `FLOES_CATALOG_V2=true` for the catalog consultation and guarded order draft tools. Set `FLOES_WHATSAPP_MEDIA=true` to include image messages in live responses. Other tenants retain their existing tools and response format. Deploying code is distinct from publishing catalog data: adding models through Chopify requires no GanoBot redeploy.
+FLOES uses the catalog consultation and guarded order draft tools by default; set `FLOES_CATALOG_V2=false` only as an explicit rollback. Catalog images are included in live WhatsApp replies by default; set `FLOES_WHATSAPP_MEDIA=false` only to disable them. Other tenants retain their existing tools and response format. Deploying code is distinct from publishing catalog data: adding models through Chopify requires no GanoBot redeploy.
 
 The existing server environment requires `FIREBASE_ADMIN_PROJECT_ID`, `FIREBASE_ADMIN_CLIENT_EMAIL`, `FIREBASE_ADMIN_PRIVATE_KEY`, `CHOPIFY_COMMERCE_BASE_URL`, `CHOPIFY_COMMERCE_API_TOKEN`, and `GANOBOT_LIVE_BEARER_TOKEN`. Optional existing settings are `CHOPIFY_COMMERCE_TIMEOUT_MS` and `GANOBOT_COMMERCE_ALLOWED_TENANTS`. Secrets must remain server-side. No Meta credentials belong in the commercial conversation module.
 

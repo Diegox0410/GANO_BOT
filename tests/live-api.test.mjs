@@ -27,10 +27,10 @@ function createResponse() {
   };
 }
 
-async function invoke({ token, body = VALID_BODY, runtimeFactory, logger } = {}) {
+async function invoke({ token, authorization, body = VALID_BODY, runtimeFactory, logger, environment } = {}) {
   const { result, response } = createResponse();
   const handler = createLiveHandler({
-    environment: { GANOBOT_LIVE_BEARER_TOKEN: TOKEN },
+    environment: environment ?? { GANOBOT_LIVE_BEARER_TOKEN: TOKEN },
     runtimeFactory: runtimeFactory ?? (async () => ({
       processLiveWhatsApp: async () => ({ reply: "Respuesta segura" }),
     })),
@@ -38,7 +38,11 @@ async function invoke({ token, body = VALID_BODY, runtimeFactory, logger } = {})
   });
   await handler({
     method: "POST",
-    headers: token === undefined ? {} : { authorization: `Bearer ${token}` },
+    headers: authorization !== undefined
+      ? { authorization }
+      : token === undefined
+        ? {}
+        : { authorization: `Bearer ${token}` },
     body,
   }, response);
   return result;
@@ -47,6 +51,25 @@ async function invoke({ token, body = VALID_BODY, runtimeFactory, logger } = {})
 test("rechaza solicitudes sin bearer token o con un token incorrecto", async () => {
   assert.equal((await invoke()).status, 401);
   assert.equal((await invoke({ token: "incorrecto" })).status, 401);
+});
+
+test("auth bearer correcto llega a validación y token vacío o formato malformado devuelve 401", async () => {
+  const invalidPayload = { ...VALID_BODY, text: "" };
+  const correct = await invoke({ token: TOKEN, body: invalidPayload });
+  assert.equal(correct.status, 400);
+  assert.deepEqual(correct.payload, {
+    error: { code: "INVALID_LIVE_REQUEST", message: "Invalid live request." },
+  });
+
+  const normalized = await invoke({ authorization: `bEaReR  ${TOKEN}  `, body: invalidPayload });
+  assert.equal(normalized.status, 400);
+  assert.equal(normalized.payload.error.code, "INVALID_LIVE_REQUEST");
+
+  for (const authorization of ["", "Basic test-live-token", "Bearer", "Bearer   ", `Bearer ${TOKEN} extra`]) {
+    assert.equal((await invoke({ authorization })).status, 401);
+  }
+  assert.equal((await invoke({ token: TOKEN, environment: {} })).status, 401);
+  assert.equal((await invoke({ token: TOKEN, environment: { GANOBOT_LIVE_BEARER_TOKEN: "  " } })).status, 401);
 });
 
 test("rechaza otro tenant, un canal distinto y payloads inválidos", async () => {
@@ -95,6 +118,11 @@ test("live entrega multimedia HTTPS ordenado y selecciona el runtime del tenant"
   } });
   assert.equal(requestedTenant, "tenant-floes"); assert.equal(result.status, 200);
   assert.deepEqual(result.payload.messages.map(message => message.type), ["image", "text"]);
+});
+
+test("live propaga la decisión de escalar y normaliza su motivo", async () => {
+  const result = await invoke({ token: TOKEN, runtimeFactory: async () => ({ async processLiveWhatsApp() { return { reply: "Te conecto con FLOES.", requiresHuman: true, escalationReason: "COMPLAINT" }; } }) });
+  assert.deepEqual(result.payload, { reply: "Te conecto con FLOES.", requiresHuman: true, escalationReason: "COMPLAINT" });
 });
 
 test("live valida URL del comprobante sin permitir rutas locales", () => {

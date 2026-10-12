@@ -3,7 +3,7 @@ import {
   createToolRegistry,
   createToolServices,
 } from "@gano-bot/ai-core/tools-engine";
-import { createBackendApplication } from "../application.js";
+import { createBackendApplication, updateExtractiveConversationSummary } from "../application.js";
 import {
   InMemoryAssistantRepository,
   InMemoryKnowledgeCatalog,
@@ -422,6 +422,12 @@ async function run(): Promise<void> {
   const auditEventsBody = await json(auditEvents);
   const auditPage = auditEventsBody.data as Readonly<Record<string, unknown>>;
   assert(Number(auditPage.total) >= 2, "mutaciones admin deben producir auditoría");
+  const conversationSummary = updateExtractiveConversationSummary(undefined, Array.from({ length: 12 }, (_, index) => ({
+    id: `old-${index}`, conversationId: "conversation-summary", role: index % 2 ? "assistant" : "user",
+    content: `turno ${index}`, contentType: "text", status: "completed", createdAt: "2026-10-10T00:00:00.000Z", updatedAt: "2026-10-10T00:00:00.000Z",
+  } as AIMessage))) ?? "";
+  assert(conversationSummary.split("\n").length <= 8, "el resumen de conversación debe tener un tamaño acotado");
+  assert(!conversationSummary.includes("turno 1\n"), "el resumen extractivo conserva mensajes del cliente, no respuestas del asistente");
   console.log(
     `Backend/API: ${assertions} verificaciones deterministas correctas.`,
   );

@@ -141,11 +141,18 @@ export interface ConversationApiResource {
   readonly assistantId: string;
   readonly ownerId: string;
   readonly messages: readonly AIMessage[];
+  readonly summary?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
 export interface ConversationRepository {
   save(value: ConversationApiResource): Promise<void>;
+  withConversationLock?<T>(
+    tenantId: string,
+    assistantId: string,
+    id: string,
+    operation: () => Promise<T>,
+  ): Promise<T>;
   get(
     tenantId: string,
     assistantId: string,
@@ -157,6 +164,8 @@ export interface ConversationRepository {
     tenantId: string,
     actorId: string,
     others?: boolean,
+    limit?: number,
+    cursor?: { readonly updatedAt: string; readonly assistantId: string; readonly id: string },
   ): Promise<readonly ConversationApiResource[]>;
   delete(
     tenantId: string,

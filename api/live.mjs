@@ -162,7 +162,8 @@ export function createLiveHandler({
       }) : [];
       const rawCommerce = record(result.commerce);
       const commerce = rawCommerce?.tenantId === validation.value.tenantId ? Object.fromEntries(Object.entries(rawCommerce).filter(([key, value]) => ["tenantId", "customerId", "conversationId", "requestId", "correlationId", "productId", "variantId", "color", "size", "orderId", "orderStatus"].includes(key) && typeof value === "string" && value.length <= 256)) : undefined;
-      json(response, 200, { reply: result.reply.trim(), ...(messages.length ? { messages } : {}), ...(commerce ? { commerce } : {}) });
+      const escalationReasons = new Set(["CUSTOMER_REQUEST", "COMPLAINT", "PAYMENT_ISSUE", "PRICING_EXCEPTION", "STOCK_CONFLICT", "RETURN_REQUEST", "DELIVERY_ISSUE", "UNKNOWN_PRODUCT", "SYSTEM_ERROR", "OTHER"]);
+      json(response, 200, { reply: result.reply.trim(), ...(result.requiresHuman === true ? { requiresHuman: true, escalationReason: escalationReasons.has(result.escalationReason) ? result.escalationReason : "OTHER" } : {}), ...(messages.length ? { messages } : {}), ...(commerce ? { commerce } : {}) });
     } catch (error) {
       if (error instanceof SyntaxError) {
         json(response, 400, { error: { code: "INVALID_JSON", message: "Invalid JSON body." } });

@@ -9,6 +9,9 @@
     "packages/*"
   ],
   "overrides": {
+    "jwks-rsa": {
+      "jose": "4.15.9"
+    },
     "firebase-admin": {
       "jwks-rsa": {
         "jose": "4.15.9"

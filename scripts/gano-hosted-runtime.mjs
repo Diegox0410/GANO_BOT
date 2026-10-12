@@ -168,6 +168,14 @@ function commerceToolCall(message, conversationMessages = []) {
   };
 }
 
+function readHumanEscalation(toolResults) {
+  const results = Array.isArray(toolResults) ? toolResults : [];
+  const escalation = results.filter((result) => result?.toolId === "commerce.requestHumanEscalation" && result?.status === "completed").at(-1)?.output;
+  if (!escalation?.escalationId) return undefined;
+  const reasons = new Set(["CUSTOMER_REQUEST", "COMPLAINT", "PAYMENT_ISSUE", "PRICING_EXCEPTION", "STOCK_CONFLICT", "RETURN_REQUEST", "DELIVERY_ISSUE", "UNKNOWN_PRODUCT", "SYSTEM_ERROR", "OTHER"]);
+  return Object.freeze({ requiresHuman: true, escalationReason: reasons.has(escalation.reason) ? escalation.reason : "OTHER" });
+}
+
 function commerceResultText(result) {
   if (Array.isArray(result)) {
     if (result.length === 0) {
@@ -1047,7 +1055,7 @@ const knowledgeProcessor =
         let content;
         let catalogResponse;
         let toolCalls = Object.freeze([]);
-        const catalogV2 = commerceTenantId === "tenant-floes" && process.env.FLOES_CATALOG_V2 === "true";
+        const catalogV2 = commerceTenantId === "tenant-floes" && process.env.FLOES_CATALOG_V2 !== "false";
         const userMessage = request.messages.findLast(message => message.role === "user")?.content ?? "";
 
         if (lastToolMessage !== undefined) {
@@ -1069,23 +1077,36 @@ const knowledgeProcessor =
               (message) =>
                 message.role === "user",
             )?.content ?? "";
-          const call =
-            (catalogV2 ? catalogConversationCall : commerceToolCall)(
-              userMessage,
-              request.messages,
-              commerceMetadata,
-            );
-          content =
-            "Consultando la fuente comercial autorizada…";
-          toolCalls = Object.freeze([
-            Object.freeze({
-              id:
-                `call-${crypto.randomUUID()}`,
-              name: call.name,
-              arguments:
-                Object.freeze(call.arguments),
-            }),
-          ]);
+          const selection = readCatalogSelection(request.messages);
+          const hasMedia = Boolean(commerceMetadata.paymentProofUrl || commerceMetadata.paymentProofReference);
+          const hasPaymentIntent = /\b(?:comprobante|comprobantes|pago|transferencia|deposito|pague)\b/i.test(userMessage.normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+          if (catalogV2 && hasMedia && (!hasPaymentIntent || !selection.orderId)) {
+            catalogResponse = {
+              reply: hasPaymentIntent
+                ? "Recibí la imagen 😊 Para asociarla correctamente, compárteme el número de pedido. El pago quedará pendiente de revisión por FLOES."
+                : "Recibí la imagen 😊 ¿Es un comprobante de pago o quieres que te ayude con otra cosa?",
+              selection,
+            };
+            content = catalogResponse.reply;
+          } else {
+            const call =
+              (catalogV2 ? catalogConversationCall : commerceToolCall)(
+                userMessage,
+                request.messages,
+                commerceMetadata,
+              );
+            content =
+              "Consultando la fuente comercial autorizada…";
+            toolCalls = Object.freeze([
+              Object.freeze({
+                id:
+                  `call-${crypto.randomUUID()}`,
+                name: call.name,
+                arguments:
+                  Object.freeze(call.arguments),
+              }),
+            ]);
+          }
         }
 
         const baseMessage = createAssistantMessage(
@@ -1599,9 +1620,11 @@ manager.create({
     }
 
     let image;
-    if (commerceTenantId === "tenant-floes" && process.env.FLOES_WHATSAPP_MEDIA === "true" && typeof payload?.data?.message?.metadata?.commerceImage === "string") {
+    if (commerceTenantId === "tenant-floes" && process.env.FLOES_WHATSAPP_MEDIA !== "false" && typeof payload?.data?.message?.metadata?.commerceImage === "string") {
       try { image = JSON.parse(payload.data.message.metadata.commerceImage); } catch { image = undefined; }
     }
+    const humanEscalation = readHumanEscalation(payload?.data?.toolResults);
+    if (humanEscalation) return Object.freeze({ reply: reply.trim(), ...humanEscalation });
     const selection = readCatalogSelection([payload.data.message]);
     const commerce = Object.freeze({ tenantId: commerceTenantId, customerId: identityResult.output?.customerId, conversationId, requestId, correlationId, ...Object.fromEntries(Object.entries(selection).filter(([key]) => ["productId", "variantId", "color", "size", "orderId", "orderStatus"].includes(key))) });
     return Object.freeze({ reply: reply.trim(), commerce, ...(image ? { messages: Object.freeze([Object.freeze(image), Object.freeze({ type: "text", text: reply.trim() })]) } : {}) });
@@ -1654,4 +1677,5 @@ export {
   knowledgePrincipal,
   commerceToolCall,
   commerceResultText,
+  readHumanEscalation,
 };

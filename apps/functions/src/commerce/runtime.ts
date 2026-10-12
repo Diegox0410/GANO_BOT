@@ -18,5 +18,5 @@ export function createCommerceRuntimeFromEnv(tenantId:string,env:NodeJS.ProcessE
  validateCommerceRuntimeEnv(env);if(!allowedTenants(env).has(tenantId))throw new Error(`Commerce tenant is not allowed: ${tenantId}`)
  if(assistantId!==COMMERCE_ASSISTANT_ID)throw new Error(`Commerce runtime requires assistantId ${COMMERCE_ASSISTANT_ID}`)
  const port=createChopifyHttpAdapterFromEnv(env)
- return Object.freeze({tenantId,assistantId,port,tools:Object.freeze([...createCommerceTools(port,tenantId,assistantId),...createSupervisorTools(port,tenantId,assistantId),...createIdentityTools(port,tenantId,assistantId),...(tenantId==='tenant-floes'&&env.FLOES_CATALOG_V2==='true'?createCatalogTools(port,tenantId,assistantId):[])])})
+ return Object.freeze({tenantId,assistantId,port,tools:Object.freeze([...createCommerceTools(port,tenantId,assistantId),...createSupervisorTools(port,tenantId,assistantId),...createIdentityTools(port,tenantId,assistantId),...(tenantId==='tenant-floes'&&env.FLOES_CATALOG_V2!=='false'?createCatalogTools(port,tenantId,assistantId):[])])})
 }

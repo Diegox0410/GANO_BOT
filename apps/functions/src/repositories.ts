@@ -48,13 +48,20 @@ export class InMemoryConversationRepository implements ConversationRepository {
     tenantId: string,
     actorId: string,
     others = false,
+    limit = 25,
+    cursor?: { readonly updatedAt: string; readonly assistantId: string; readonly id: string },
   ): Promise<readonly ConversationApiResource[]> {
-    return Object.freeze(
-      [...this.values.values()].filter(
+    const sorted = [...this.values.values()].filter(
         (item) =>
           item.tenantId === tenantId && (others || item.ownerId === actorId),
-      ),
+      ).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || b.id.localeCompare(a.id));
+    const cursorIndex = cursor ? sorted.findIndex(item => item.updatedAt === cursor.updatedAt && item.assistantId === cursor.assistantId && item.id === cursor.id) : -1;
+    const after = !cursor ? 0 : cursorIndex >= 0 ? cursorIndex + 1 : sorted.findIndex(item =>
+      item.updatedAt < cursor.updatedAt ||
+      (item.updatedAt === cursor.updatedAt && `${item.assistantId}__${item.id}` < `${cursor.assistantId}__${cursor.id}`),
     );
+    const start = after < 0 ? sorted.length : after;
+    return Object.freeze(sorted.slice(start, start + Math.min(Math.max(1, limit), 26)));
   }
   public async delete(
     tenantId: string,
