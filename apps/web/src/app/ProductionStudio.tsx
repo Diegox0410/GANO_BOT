@@ -149,7 +149,7 @@ function Login({ onAuthenticated }: { readonly onAuthenticated: (session: Fireba
   return (
     <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
       <form
-        style={{ width: "min(420px, 100%)", display: "grid", gap: 16, padding: 28, border: "1px solid #d8d8d8", borderRadius: 18, background: "#fff" }}
+        style={{ width: "min(420px, 100%)", display: "grid", gap: 16, padding: 28, border: "1px solid #d8d8d8", borderRadius: 18, background: "#fff", color: "#0f172a" }}
         onSubmit={(event) => {
           event.preventDefault();
           setBusy(true);
@@ -210,3 +210,4 @@ export function ProductionStudio(): React.JSX.Element {
   if (!session) return <Login onAuthenticated={setSession} />;
   return <AuthenticatedStudio session={session} onSession={setSession} onSignOut={() => { sessionStorage.removeItem(SESSION_KEY); setSession(undefined); }} />;
 }
+
