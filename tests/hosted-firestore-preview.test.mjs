@@ -9,6 +9,7 @@ test("Preview uses distinct collection names for every hosted persistence adapte
   const preview = resolveHostedFirestoreCollections({ VERCEL_ENV: "preview" });
   assert.deepEqual(resolveHostedFirestoreCollections({}), production);
   assert.equal(preview.conversations, "ganobot_runtime_preview");
+  assert.equal(preview.channelDeliveries, "ganobot_channel_deliveries_preview");
   for (const key of Object.keys(production)) assert.notEqual(preview[key], production[key]);
 });
 

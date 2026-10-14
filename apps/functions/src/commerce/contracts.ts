@@ -5,6 +5,8 @@ export interface CommerceRequestContext {
   readonly assistantId: string;
   readonly actorId: string;
   readonly conversationId: string;
+  readonly originConversationId?: string;
+  readonly customerId?: string;
   readonly requestId: string;
   readonly correlationId: string;
   readonly idempotencyKey?: string;
@@ -122,6 +124,7 @@ export type CommerceOpportunityStatus =
 
 export interface CommerceOpportunityInput {
   readonly customerId: string;
+  readonly conversationId?: string;
   readonly title: string;
   readonly source?: string;
   readonly campaignId?: string;
@@ -144,6 +147,7 @@ export interface CommerceOrderDraftLineInput {
 
 export interface CommerceOrderDraftInput {
   readonly customerId: string;
+  readonly conversationId?: string;
   readonly opportunityId?: string;
   readonly lines: readonly CommerceOrderDraftLineInput[];
   readonly notes?: string;
@@ -158,6 +162,8 @@ export interface CommerceOrderDraft {
 
 export interface CommercePaymentProofInput {
   readonly orderId: string;
+  readonly customerId?: string;
+  readonly conversationId?: string;
   readonly proofUrl?: string;
   readonly externalReference?: string;
   readonly amount?: CommerceMoney;
@@ -183,6 +189,7 @@ export type CommerceOrderStatus =
 
 export interface CommerceOrderSnapshot {
   readonly orderId: string;
+  readonly conversationId?: string;
   readonly customerId?: string;
   readonly status: CommerceOrderStatus;
   readonly paymentStatus?:

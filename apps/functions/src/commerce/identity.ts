@@ -1,6 +1,6 @@
 import type { CommerceRequestContext } from './contracts.js'
 
-export type CommerceIdentityChannel='WHATSAPP'|'INSTAGRAM'|'FACEBOOK'|'WEB'|'OTHER'
+export type CommerceIdentityChannel='WHATSAPP'|'INSTAGRAM'|'FACEBOOK'|'TIKTOK'|'WEB'|'OTHER'
 export interface CommerceResolveIdentityInput {
  readonly channel:CommerceIdentityChannel
  readonly externalIdentifier:string

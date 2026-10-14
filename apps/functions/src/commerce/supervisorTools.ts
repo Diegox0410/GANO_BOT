@@ -15,6 +15,7 @@ function requestContext(context:ToolExecutionContext):CommerceRequestContext {
   return Object.freeze({
     tenantId:context.tenantId,assistantId:context.assistantId,actorId:context.actorId,
     conversationId:context.conversationId,requestId:context.requestId,correlationId:context.correlationId,
+    ...(typeof context.metadata?.originConversationId==='string'&&/^[A-Za-z0-9_-]{1,256}$/.test(context.metadata.originConversationId)?{originConversationId:context.metadata.originConversationId}:{}),
     idempotencyKey:stringValue(context.metadata?.idempotencyKey)??`${context.tenantId}:${context.requestId}:${SUPERVISOR_TOOL_ID}`,
     signal:context.signal,
   })

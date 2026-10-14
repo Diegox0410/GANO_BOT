@@ -795,6 +795,7 @@ export class BackendApplication {
           correlationId,
           signal,
           body.toolConfirmationIds ?? Object.freeze([]),
+          body.metadata,
         ),
       );
       for (const result of toolResults) {
@@ -899,7 +900,20 @@ export class BackendApplication {
     correlationId: string,
     signal: AbortSignal,
     confirmationIds: readonly string[],
+    requestMetadata?: ChatApiRequest["metadata"],
   ): ToolExecutionContext {
+    const requestedOriginConversationId = principal.actorId === "chopify-whatsapp-live" && typeof requestMetadata?.originConversationId === "string"
+      ? requestMetadata.originConversationId
+      : conversationId;
+    const originConversationId = /^[A-Za-z0-9_-]{1,256}$/.test(requestedOriginConversationId)
+      ? requestedOriginConversationId
+      : undefined;
+    const requestedCustomerId = principal.actorId === "chopify-whatsapp-live" && typeof requestMetadata?.customerId === "string"
+      ? requestMetadata.customerId.trim()
+      : "";
+    const customerId = /^[A-Za-z0-9_-]{1,256}$/.test(requestedCustomerId)
+      ? requestedCustomerId
+      : undefined;
     return Object.freeze({
       tenantId: principal.tenantId,
       assistantId,
@@ -930,6 +944,10 @@ export class BackendApplication {
       maximumRiskLevel: "critical",
       confirmationIds,
       signal,
+      metadata: Object.freeze({
+        ...(originConversationId ? { originConversationId } : {}),
+        ...(customerId ? { customerId } : {}),
+      }),
     });
   }
   private async readJson(request: Request): Promise<unknown> {

@@ -86,6 +86,7 @@ export function validateLivePayload(value, environment = process.env) {
   const phone = rawPhone.replace(/\D/g, "");
   const name = typeof customer?.name === "string" ? customer.name.trim() : "";
   const text = typeof body?.text === "string" ? body.text.trim() : "";
+  const conversationId = typeof body?.conversationId === "string" ? body.conversationId.trim() : undefined;
   const paymentProofUrl = body?.paymentProofUrl === undefined ? undefined : safeCatalogImageUrl(body.paymentProofUrl);
   const paymentProofReference = typeof body?.paymentProofReference === "string" && /^meta-whatsapp:\/\/[0-9]{5,32}\/media\/[A-Za-z0-9_-]{1,256}$/.test(body.paymentProofReference) ? body.paymentProofReference : undefined;
 
@@ -101,6 +102,7 @@ export function validateLivePayload(value, environment = process.env) {
   }
   if (name.length > 100) return Object.freeze({ status: 400, error: "invalid-customer-name" });
   if (!text || text.length > 4000) return Object.freeze({ status: 400, error: "invalid-text" });
+  if (body?.conversationId !== undefined && (!conversationId || !/^[A-Za-z0-9_-]{1,256}$/.test(conversationId))) return Object.freeze({ status: 400, error: "invalid-conversation-id" });
   if (body?.paymentProofUrl !== undefined && !paymentProofUrl) return Object.freeze({ status: 400, error: "invalid-payment-proof-url" });
   if (body?.paymentProofReference !== undefined && !paymentProofReference) return Object.freeze({ status: 400, error: "invalid-payment-proof-reference" });
 
@@ -114,6 +116,7 @@ export function validateLivePayload(value, environment = process.env) {
         ...(name ? { name } : {}),
       }),
       text,
+      ...(conversationId ? { conversationId } : {}),
       ...(paymentProofUrl ? { paymentProofUrl } : {}),
       ...(paymentProofReference ? { paymentProofReference } : {}),
     }),

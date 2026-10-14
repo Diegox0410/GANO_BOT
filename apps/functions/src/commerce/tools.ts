@@ -42,6 +42,8 @@ function commerceContext(
     assistantId: context.assistantId,
     actorId: context.actorId,
     conversationId: context.conversationId,
+    ...(stringValue(context.metadata?.customerId) ? { customerId: stringValue(context.metadata?.customerId) } : {}),
+    ...(typeof context.metadata?.originConversationId === "string" && /^[A-Za-z0-9_-]{1,256}$/.test(context.metadata.originConversationId) ? { originConversationId: context.metadata.originConversationId } : {}),
     requestId: context.requestId,
     correlationId: context.correlationId,
     idempotencyKey:
@@ -49,6 +51,13 @@ function commerceContext(
       `${context.tenantId}:${context.requestId}:${toolId}`,
     signal: context.signal,
   });
+}
+
+function scopedCustomerId(context: ToolExecutionContext, requested: unknown): string | undefined {
+  const trusted = stringValue(context.metadata?.customerId);
+  const supplied = stringValue(requested);
+  if (trusted && supplied && trusted !== supplied) throw new Error("Customer is outside the authorized conversation.");
+  return trusted ?? supplied;
 }
 
 function descriptor(
@@ -86,6 +95,10 @@ export function createCommerceTools(
   tenantId: string,
   assistantId: string,
 ): readonly ToolDefinition[] {
+  const scopedContext = (context: ToolExecutionContext, toolId: string): CommerceRequestContext => {
+    if (context.tenantId !== tenantId || context.assistantId !== assistantId) throw new Error("Commerce context is outside the authorized scope.");
+    return commerceContext(context, toolId);
+  };
   return Object.freeze([
     {
       descriptor: descriptor(
@@ -106,7 +119,7 @@ export function createCommerceTools(
       handler: {
         async execute(args, context) {
           return port.searchProducts(
-            commerceContext(context, COMMERCE_TOOL_IDS.searchProducts),
+            scopedContext(context, COMMERCE_TOOL_IDS.searchProducts),
             { query: stringValue(args.query) ?? "", limit: numberValue(args.limit) },
           );
         },
@@ -128,7 +141,7 @@ export function createCommerceTools(
       handler: {
         async execute(args, context) {
           return port.getProductDetails(
-            commerceContext(context, COMMERCE_TOOL_IDS.getProductDetails),
+            scopedContext(context, COMMERCE_TOOL_IDS.getProductDetails),
             { productId: stringValue(args.productId) ?? "" },
           );
         },
@@ -155,7 +168,7 @@ export function createCommerceTools(
       handler: {
         async execute(args, context) {
           return port.checkAvailability(
-            commerceContext(context, COMMERCE_TOOL_IDS.checkAvailability),
+            scopedContext(context, COMMERCE_TOOL_IDS.checkAvailability),
             {
               productId: stringValue(args.productId) ?? "",
               variantId: stringValue(args.variantId),
@@ -189,9 +202,9 @@ export function createCommerceTools(
       handler: {
         async execute(args, context) {
           return port.createOrUpdateCustomer(
-            commerceContext(context, COMMERCE_TOOL_IDS.createOrUpdateCustomer),
+            scopedContext(context, COMMERCE_TOOL_IDS.createOrUpdateCustomer),
             {
-              customerId: stringValue(args.customerId),
+              customerId: scopedCustomerId(context, args.customerId),
               name: stringValue(args.name),
               phone: stringValue(args.phone),
               email: stringValue(args.email),
@@ -226,9 +239,9 @@ export function createCommerceTools(
       handler: {
         async execute(args, context) {
           return port.createOpportunity(
-            commerceContext(context, COMMERCE_TOOL_IDS.createOpportunity),
+            scopedContext(context, COMMERCE_TOOL_IDS.createOpportunity),
             {
-              customerId: stringValue(args.customerId) ?? "",
+              customerId: scopedCustomerId(context, args.customerId) ?? "",
               title: stringValue(args.title) ?? "",
               source: stringValue(args.source),
               campaignId: stringValue(args.campaignId),
@@ -291,9 +304,9 @@ export function createCommerceTools(
               })
             : [];
           return port.createOrderDraft(
-            commerceContext(context, COMMERCE_TOOL_IDS.createOrderDraft),
+            scopedContext(context, COMMERCE_TOOL_IDS.createOrderDraft),
             {
-              customerId: stringValue(args.customerId) ?? "",
+              customerId: scopedCustomerId(context, args.customerId) ?? "",
               opportunityId: stringValue(args.opportunityId),
               lines: Object.freeze(lines),
               notes: stringValue(args.notes),
@@ -314,6 +327,7 @@ export function createCommerceTools(
           required: Object.freeze(["orderId"]),
           properties: Object.freeze({
             orderId: stringSchema,
+            customerId: stringSchema,
             proofUrl: stringSchema,
             externalReference: stringSchema,
             amount: Object.freeze({
@@ -340,9 +354,11 @@ export function createCommerceTools(
             if (value !== undefined && currency) amount = { amount: value, currency };
           }
           return port.attachPaymentProof(
-            commerceContext(context, COMMERCE_TOOL_IDS.attachPaymentProof),
+            scopedContext(context, COMMERCE_TOOL_IDS.attachPaymentProof),
             {
               orderId: stringValue(args.orderId) ?? "",
+              customerId: scopedCustomerId(context, args.customerId),
+              conversationId: context.conversationId,
               proofUrl: stringValue(args.proofUrl),
               externalReference: stringValue(args.externalReference),
               amount,
@@ -367,10 +383,13 @@ export function createCommerceTools(
       ),
       handler: {
         async execute(args, context) {
-          return port.getOrderStatus(
-            commerceContext(context, COMMERCE_TOOL_IDS.getOrderStatus),
+          const order = await port.getOrderStatus(
+            scopedContext(context, COMMERCE_TOOL_IDS.getOrderStatus),
             { orderId: stringValue(args.orderId) ?? "" },
           );
+          const customerId = scopedCustomerId(context, undefined);
+          if (order && customerId && order.customerId !== customerId) throw new Error("Order is outside the authorized customer conversation.");
+          return order;
         },
       },
     },

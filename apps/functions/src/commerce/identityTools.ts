@@ -3,7 +3,7 @@ import type { CommerceRequestContext } from './contracts.js'
 import type { CommerceIdentityChannel,CommerceIdentityPort } from './identity.js'
 
 export const IDENTITY_TOOL_ID='commerce.resolveCustomerIdentity'
-const channels=new Set<CommerceIdentityChannel>(['WHATSAPP','INSTAGRAM','FACEBOOK','WEB','OTHER'])
+const channels=new Set<CommerceIdentityChannel>(['WHATSAPP','INSTAGRAM','FACEBOOK','TIKTOK','WEB','OTHER'])
 const str=(v:unknown)=>typeof v==='string'&&v.trim()?v.trim():undefined
 const context=(c:ToolExecutionContext):CommerceRequestContext=>Object.freeze({
  tenantId:c.tenantId,assistantId:c.assistantId,actorId:c.actorId,conversationId:c.conversationId,

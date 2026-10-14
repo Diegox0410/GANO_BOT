@@ -1,6 +1,6 @@
 import { AIChatProviderRegistry } from "../packages/ai-core/dist/chat/registry.js";
 import { createHash } from "node:crypto";
-import { catalogConversationCall, catalogConversationResponse, readCatalogSelection } from "./floes-catalog-conversation.mjs";
+import { catalogConversationCall, catalogConversationResponse, commerceImageDecision, readCatalogSelection } from "./floes-catalog-conversation.mjs";
 import { resolveHostedFirestoreCollections } from "./hosted-firestore-collections.mjs";
 
 import {
@@ -170,7 +170,8 @@ function commerceToolCall(message, conversationMessages = []) {
 
 function readHumanEscalation(toolResults) {
   const results = Array.isArray(toolResults) ? toolResults : [];
-  const escalation = results.filter((result) => result?.toolId === "commerce.requestHumanEscalation" && result?.status === "completed").at(-1)?.output;
+  const escalationResult = results.filter((result) => result?.status === "completed" && (result?.toolId === "commerce.requestHumanEscalation" || result?.toolId === "commerce.recordOrderFollowUp")).at(-1);
+  const escalation = escalationResult?.toolId === "commerce.recordOrderFollowUp" ? escalationResult.output?.escalation : escalationResult?.output;
   if (!escalation?.escalationId) return undefined;
   const reasons = new Set(["CUSTOMER_REQUEST", "COMPLAINT", "PAYMENT_ISSUE", "PRICING_EXCEPTION", "STOCK_CONFLICT", "RETURN_REQUEST", "DELIVERY_ISSUE", "UNKNOWN_PRODUCT", "SYSTEM_ERROR", "OTHER"]);
   return Object.freeze({ requiresHuman: true, escalationReason: reasons.has(escalation.reason) ? escalation.reason : "OTHER" });
@@ -587,6 +588,315 @@ function answerFromKnowledge({
       .trimEnd() +
     "\n\nPuedes pedirme que profundice en alguno de estos puntos."
   );
+}
+
+export function createHostedCommerceProvider({ commerceTenantId, activeLiveCommerceMetadata = new Map(), now = () => new Date().toISOString(), environment = process.env }) {
+  if (!["tenant-floes", "tenant-mg"].includes(commerceTenantId)) throw new Error("Commerce provider tenant is not allowed.");
+  return Object.freeze({
+      name: "development",
+
+      descriptor:
+        Object.freeze({
+          id:
+            "floes-commerce-deterministic",
+
+          name: "development",
+
+          displayName:
+            "FLOES Commerce Deterministic Provider",
+
+          defaultModel:
+            "commerce-grounded-v1",
+
+          enabled: true,
+
+          capabilities:
+            Object.freeze({
+              supportsStreaming: false,
+              supportsTools: true,
+              supportsJson: false,
+              supportsMultimodal: false,
+              supportsSeed: true,
+            }),
+        }),
+
+      async generate(request) {
+        const createdAt = now();
+        const correlationId = typeof request.metadata?.correlationId === "string" ? request.metadata.correlationId : "";
+        const commerceMetadata = mergeHostedCommerceMetadata(request, activeLiveCommerceMetadata.get(correlationId));
+        const lastToolMessage =
+          request.messages.findLast(
+            (message) =>
+              message.role === "tool",
+          );
+
+        let content;
+        let catalogResponse;
+        let toolCalls = Object.freeze([]);
+        const catalogV2 = commerceTenantId === "tenant-floes" && environment.FLOES_CATALOG_V2 !== "false";
+        const userMessage = request.messages.findLast(message => message.role === "user")?.content ?? "";
+
+        if (lastToolMessage !== undefined) {
+          let result;
+          try {
+            result = JSON.parse(
+              lastToolMessage.content,
+            );
+          } catch {
+            result = undefined;
+          }
+          if (catalogV2) {
+            catalogResponse = catalogConversationResponse(result, userMessage, readCatalogSelection(request.messages));
+            content = catalogResponse.reply;
+          } else content = commerceResultText(result);
+        } else {
+          const userMessage =
+            request.messages.findLast(
+              (message) =>
+                message.role === "user",
+            )?.content ?? "";
+          const selection = readCatalogSelection(request.messages);
+          const hasMedia = Boolean(commerceMetadata.paymentProofUrl || commerceMetadata.paymentProofReference);
+          const hasPaymentIntent = /\b(?:comprobante|comprobantes|pago|transferencia|deposito|pague)\b/i.test(userMessage.normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+          if (catalogV2 && hasMedia && (!hasPaymentIntent || !selection.orderId)) {
+            catalogResponse = {
+              reply: hasPaymentIntent
+                ? "Recibí la imagen 😊 Para asociarla correctamente, compárteme el número de pedido. El pago quedará pendiente de revisión por FLOES."
+                : "Recibí la imagen 😊 ¿Es un comprobante de pago o quieres que te ayude con otra cosa?",
+              selection,
+            };
+            content = catalogResponse.reply;
+          } else {
+            const call =
+              (catalogV2 ? catalogConversationCall : commerceToolCall)(
+                userMessage,
+                request.messages,
+                commerceMetadata,
+              );
+            if (call.kind === "reply") {
+              catalogResponse = { reply: call.reply, selection: call.selection };
+              content = call.reply;
+            } else {
+              content = "Consultando la fuente comercial autorizada…";
+              toolCalls = Object.freeze([
+              Object.freeze({
+                id:
+                  `call-${crypto.randomUUID()}`,
+                name: call.name,
+                arguments:
+                  Object.freeze(call.arguments),
+              }),
+              ]);
+            }
+          }
+        }
+
+        const baseMessage = createAssistantMessage(
+            content,
+            createdAt,
+          );
+        const imageDecision = catalogResponse ? commerceImageDecision(catalogResponse.image, catalogResponse.selection, request.messages, request.messages.findLast(item => item.role === "user")?.content ?? "", { tenantId: commerceTenantId, conversationId: request.messages.findLast(item => item.role === "user")?.conversationId ?? "conversation" }) : undefined;
+        const previousMediaKey = request.messages.findLast(item => item.role === "assistant" && typeof item.metadata?.commerceMediaKey === "string")?.metadata?.commerceMediaKey;
+        const message = catalogResponse ? Object.freeze({ ...baseMessage, metadata: Object.freeze({ commerceSelection: JSON.stringify(catalogResponse.selection), ...(imageDecision?.send ? { commerceImage: JSON.stringify(catalogResponse.image), commerceMediaKey: imageDecision.key } : previousMediaKey ? { commerceMediaKey: previousMediaKey } : {}) }) }) : baseMessage;
+
+        return Object.freeze({
+          id:
+            `response-${crypto.randomUUID()}`,
+          requestId:
+            request.requestId,
+          provider:
+            "development",
+          model:
+            "commerce-grounded-v1",
+          content,
+          message,
+          toolCalls,
+          finishReason:
+            toolCalls.length > 0
+              ? "tool_calls"
+              : "stop",
+          createdAt,
+        });
+      },
+    });
+
+}
+
+export function createLiveOmnichannelProcessor({ commerceTenantId, liveApplication, activeLiveCommerceMetadata = new Map(), environment = process.env }) {
+  return async function processLiveOmnichannel(input) {
+    if (input.tenantId !== commerceTenantId) throw new LiveProcessingError("tenant-isolation", 403, "Live request tenant does not match runtime.");
+    const channel = typeof input.channel === "string" ? input.channel : "WHATSAPP";
+    if (!["WHATSAPP", "WEB", "INSTAGRAM", "FACEBOOK", "TIKTOK"].includes(channel)) throw new LiveProcessingError("channel-validation", 400, "Live request channel is not supported.");
+    const customer = input.customer && typeof input.customer === "object" ? input.customer : {};
+    const externalCustomerId = input.externalCustomerId ?? customer.externalIdentifier ?? customer.phone;
+    if (typeof externalCustomerId !== "string" || !/^[A-Za-z0-9:_-]{1,256}$/.test(externalCustomerId)) throw new LiveProcessingError("identity-validation", 400, "Live request customer identity is invalid.");
+    const channelSlug = channel.toLowerCase();
+    const requestId =
+      `live-${createHash("sha256").update(`${commerceTenantId}:${input.providerMessageId}`).digest("hex")}`;
+    const correlationId =
+      channel === "WHATSAPP" ? `whatsapp-${input.providerMessageId}` : `${channelSlug}-${createHash("sha256").update(`${commerceTenantId}:${input.provider}:${channel}:${input.providerMessageId}`).digest("hex")}`;
+    const conversationId =
+      `${channelSlug}-${createHash("sha256")
+        .update(`${commerceTenantId}:${channel}:${externalCustomerId}`)
+        .digest("hex")}`;
+    const headers =
+      Object.freeze({
+        authorization:
+          "Bearer internal-live-boundary",
+        "content-type":
+          "application/json",
+        "x-request-id":
+          requestId,
+        "x-correlation-id":
+          correlationId,
+      });
+
+    const identityResponse =
+      await liveApplication.handle(
+        new Request(
+          "https://gano-bot.internal/v1/tools/commerce.resolveCustomerIdentity/execute",
+          {
+            method: "POST",
+            headers,
+            body:
+              JSON.stringify({
+                assistantId:
+                  COMMERCE_ASSISTANT_ID,
+                conversationId,
+                arguments:
+                  {
+                    channel,
+                    externalIdentifier:
+                      externalCustomerId,
+                    ...(customer.phone
+                      ? { phone: customer.phone }
+                      : {}),
+                    ...(customer.email
+                      ? { email: customer.email }
+                      : {}),
+                    ...(customer.name
+                      ? {
+                          name:
+                            customer.name,
+                        }
+                      : {}),
+                    acquisitionSource:
+                      input.acquisitionSource ?? channel,
+                  },
+              }),
+          },
+        ),
+      );
+
+    const identityPayload =
+      await identityResponse.json();
+    const identityResult =
+      identityPayload?.data;
+
+    if (
+      !identityResponse.ok ||
+      identityResult?.status !== "completed"
+    ) {
+      throw new LiveProcessingError(
+        "resolve-customer-identity",
+        identityResponse.status,
+        `Identity tool ended with ${String(identityResult?.status ?? "invalid-response")}.`,
+      );
+    }
+
+    activeLiveCommerceMetadata.set(correlationId, Object.freeze({
+      customerId: identityResult.output?.customerId,
+      ...(input.conversationId ? { originConversationId: input.conversationId } : {}),
+      customerPhone: customer.phone,
+      ...(customer.name ? { customerName: customer.name } : {}),
+      ...(input.paymentProofUrl ? { paymentProofUrl: input.paymentProofUrl } : {}),
+      ...(input.paymentProofReference ? { paymentProofReference: input.paymentProofReference } : {}),
+    }));
+    let chatResponse;
+    try {
+      chatResponse = await liveApplication.handle(
+        new Request(
+          "https://gano-bot.internal/v1/chat",
+          {
+            method: "POST",
+            headers,
+            body:
+              JSON.stringify({
+                assistantId:
+                  COMMERCE_ASSISTANT_ID,
+                conversationId,
+                message:
+                  input.text,
+                locale: "es",
+                metadata:
+                  {
+                    channel,
+                    providerMessageId:
+                      input.providerMessageId,
+                    requestId,
+                    correlationId,
+                    customerId: identityResult.output?.customerId,
+                    ...(input.conversationId ? { originConversationId: input.conversationId } : {}),
+                    externalCustomerId,
+                    customerPhone: customer.phone,
+                    ...(customer.name ? { customerName: customer.name } : {}),
+                    ...(input.paymentProofUrl ? { paymentProofUrl: input.paymentProofUrl } : {}),
+                    ...(input.paymentProofReference ? { paymentProofReference: input.paymentProofReference } : {}),
+                  },
+              }),
+          },
+        ),
+      );
+    } finally {
+      activeLiveCommerceMetadata.delete(correlationId);
+    }
+
+    if (!chatResponse.ok) {
+      let safeErrorCode;
+      try {
+        const failure = await chatResponse.json();
+        const code = failure?.error?.code;
+        if (typeof code === "string" && /^[A-Z0-9_]{1,80}$/.test(code)) safeErrorCode = code;
+      } catch { /* keep the public-safe fallback below */ }
+      throw new LiveProcessingError(
+        "commerce-assistant",
+        chatResponse.status,
+        `Commerce assistant request failed${safeErrorCode ? ` (${safeErrorCode})` : ""}.`,
+      );
+    }
+
+    const payload =
+      await chatResponse.json();
+    const reply =
+      payload?.data?.message?.content;
+
+    if (
+      typeof reply !== "string" ||
+      !reply.trim()
+    ) {
+      throw new LiveProcessingError(
+        "response-validation",
+        502,
+        "Commerce assistant returned an invalid reply.",
+      );
+    }
+
+    let image;
+    if (channel === "WHATSAPP" && commerceTenantId === "tenant-floes" && environment.FLOES_WHATSAPP_MEDIA !== "false" && typeof payload?.data?.message?.metadata?.commerceImage === "string") {
+      try { image = JSON.parse(payload.data.message.metadata.commerceImage); } catch { image = undefined; }
+    }
+    const humanEscalation = readHumanEscalation(payload?.data?.toolResults);
+    const selection = readCatalogSelection([payload.data.message]);
+    const commerce = Object.freeze({ tenantId: commerceTenantId, customerId: identityResult.output?.customerId, conversationId: input.conversationId ?? conversationId, requestId, correlationId, ...Object.fromEntries(Object.entries(selection).filter(([key]) => ["productId", "variantId", "color", "size", "orderId", "orderStatus"].includes(key))) });
+    if (humanEscalation) return Object.freeze({ reply: reply.trim(), commerce, ...humanEscalation });
+    return Object.freeze({ reply: reply.trim(), commerce, ...(image ? { messages: Object.freeze([Object.freeze(image), Object.freeze({ type: "text", text: reply.trim() })]) } : {}) });
+  }
+
+}
+
+export function createLiveWhatsAppProcessor(options) {
+  const processor = createLiveOmnichannelProcessor(options);
+  return input => processor(Object.freeze({ ...input, channel: "WHATSAPP", provider: "meta" }));
 }
 
 async function createHostedRuntime(commerceTenantId) {
@@ -1013,128 +1323,7 @@ const knowledgeProcessor =
       },
     });
 
-  const commerceProvider =
-    Object.freeze({
-      name: "development",
-
-      descriptor:
-        Object.freeze({
-          id:
-            "floes-commerce-deterministic",
-
-          name: "development",
-
-          displayName:
-            "FLOES Commerce Deterministic Provider",
-
-          defaultModel:
-            "commerce-grounded-v1",
-
-          enabled: true,
-
-          capabilities:
-            Object.freeze({
-              supportsStreaming: false,
-              supportsTools: true,
-              supportsJson: false,
-              supportsMultimodal: false,
-              supportsSeed: true,
-            }),
-        }),
-
-      async generate(request) {
-        const createdAt = now();
-        const correlationId = typeof request.metadata?.correlationId === "string" ? request.metadata.correlationId : "";
-        const commerceMetadata = mergeHostedCommerceMetadata(request, activeLiveCommerceMetadata.get(correlationId));
-        const lastToolMessage =
-          request.messages.findLast(
-            (message) =>
-              message.role === "tool",
-          );
-
-        let content;
-        let catalogResponse;
-        let toolCalls = Object.freeze([]);
-        const catalogV2 = commerceTenantId === "tenant-floes" && process.env.FLOES_CATALOG_V2 !== "false";
-        const userMessage = request.messages.findLast(message => message.role === "user")?.content ?? "";
-
-        if (lastToolMessage !== undefined) {
-          let result;
-          try {
-            result = JSON.parse(
-              lastToolMessage.content,
-            );
-          } catch {
-            result = undefined;
-          }
-          if (catalogV2) {
-            catalogResponse = catalogConversationResponse(result, userMessage, readCatalogSelection(request.messages));
-            content = catalogResponse.reply;
-          } else content = commerceResultText(result);
-        } else {
-          const userMessage =
-            request.messages.findLast(
-              (message) =>
-                message.role === "user",
-            )?.content ?? "";
-          const selection = readCatalogSelection(request.messages);
-          const hasMedia = Boolean(commerceMetadata.paymentProofUrl || commerceMetadata.paymentProofReference);
-          const hasPaymentIntent = /\b(?:comprobante|comprobantes|pago|transferencia|deposito|pague)\b/i.test(userMessage.normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
-          if (catalogV2 && hasMedia && (!hasPaymentIntent || !selection.orderId)) {
-            catalogResponse = {
-              reply: hasPaymentIntent
-                ? "Recibí la imagen 😊 Para asociarla correctamente, compárteme el número de pedido. El pago quedará pendiente de revisión por FLOES."
-                : "Recibí la imagen 😊 ¿Es un comprobante de pago o quieres que te ayude con otra cosa?",
-              selection,
-            };
-            content = catalogResponse.reply;
-          } else {
-            const call =
-              (catalogV2 ? catalogConversationCall : commerceToolCall)(
-                userMessage,
-                request.messages,
-                commerceMetadata,
-              );
-            content =
-              "Consultando la fuente comercial autorizada…";
-            toolCalls = Object.freeze([
-              Object.freeze({
-                id:
-                  `call-${crypto.randomUUID()}`,
-                name: call.name,
-                arguments:
-                  Object.freeze(call.arguments),
-              }),
-            ]);
-          }
-        }
-
-        const baseMessage = createAssistantMessage(
-            content,
-            createdAt,
-          );
-        const message = catalogResponse ? Object.freeze({ ...baseMessage, metadata: Object.freeze({ commerceSelection: JSON.stringify(catalogResponse.selection), ...(catalogResponse.image ? { commerceImage: JSON.stringify(catalogResponse.image) } : {}) }) }) : baseMessage;
-
-        return Object.freeze({
-          id:
-            `response-${crypto.randomUUID()}`,
-          requestId:
-            request.requestId,
-          provider:
-            "development",
-          model:
-            "commerce-grounded-v1",
-          content,
-          message,
-          toolCalls,
-          finishReason:
-            toolCalls.length > 0
-              ? "tool_calls"
-              : "stop",
-          createdAt,
-        });
-      },
-    });
+  const commerceProvider = createHostedCommerceProvider({ commerceTenantId, activeLiveCommerceMetadata, now });
 
   const chatProviders =
     new AIChatProviderRegistry({
@@ -1472,167 +1661,13 @@ manager.create({
       },
     );
 
-  async function processLiveWhatsApp(input) {
-    if (input.tenantId !== commerceTenantId) throw new LiveProcessingError("tenant-isolation", 403, "Live request tenant does not match runtime.");
-    const requestId =
-      `live-${createHash("sha256").update(`${commerceTenantId}:${input.providerMessageId}`).digest("hex")}`;
-    const correlationId =
-      `whatsapp-${input.providerMessageId}`;
-    const conversationId =
-      `whatsapp-${createHash("sha256")
-        .update(`${commerceTenantId}:${input.customer.phone}`)
-        .digest("hex")}`;
-    const headers =
-      Object.freeze({
-        authorization:
-          "Bearer internal-live-boundary",
-        "content-type":
-          "application/json",
-        "x-request-id":
-          requestId,
-        "x-correlation-id":
-          correlationId,
-      });
-
-    const identityResponse =
-      await liveApplication.handle(
-        new Request(
-          "https://gano-bot.internal/v1/tools/commerce.resolveCustomerIdentity/execute",
-          {
-            method: "POST",
-            headers,
-            body:
-              JSON.stringify({
-                assistantId:
-                  COMMERCE_ASSISTANT_ID,
-                conversationId,
-                arguments:
-                  {
-                    channel:
-                      "WHATSAPP",
-                    externalIdentifier:
-                      input.customer.phone,
-                    phone:
-                      input.customer.phone,
-                    ...(input.customer.name
-                      ? {
-                          name:
-                            input.customer.name,
-                        }
-                      : {}),
-                    acquisitionSource:
-                      "WHATSAPP",
-                  },
-              }),
-          },
-        ),
-      );
-
-    const identityPayload =
-      await identityResponse.json();
-    const identityResult =
-      identityPayload?.data;
-
-    if (
-      !identityResponse.ok ||
-      identityResult?.status !== "completed"
-    ) {
-      throw new LiveProcessingError(
-        "resolve-customer-identity",
-        identityResponse.status,
-        `Identity tool ended with ${String(identityResult?.status ?? "invalid-response")}.`,
-      );
-    }
-
-    activeLiveCommerceMetadata.set(correlationId, Object.freeze({
-      customerId: identityResult.output?.customerId,
-      customerPhone: input.customer.phone,
-      ...(input.customer.name ? { customerName: input.customer.name } : {}),
-      ...(input.paymentProofUrl ? { paymentProofUrl: input.paymentProofUrl } : {}),
-      ...(input.paymentProofReference ? { paymentProofReference: input.paymentProofReference } : {}),
-    }));
-    let chatResponse;
-    try {
-      chatResponse = await liveApplication.handle(
-        new Request(
-          "https://gano-bot.internal/v1/chat",
-          {
-            method: "POST",
-            headers,
-            body:
-              JSON.stringify({
-                assistantId:
-                  COMMERCE_ASSISTANT_ID,
-                conversationId,
-                message:
-                  input.text,
-                locale: "es",
-                metadata:
-                  {
-                    channel:
-                      "WHATSAPP",
-                    providerMessageId:
-                      input.providerMessageId,
-                    requestId,
-                    correlationId,
-                    customerId: identityResult.output?.customerId,
-                    customerPhone: input.customer.phone,
-                    ...(input.customer.name ? { customerName: input.customer.name } : {}),
-                    ...(input.paymentProofUrl ? { paymentProofUrl: input.paymentProofUrl } : {}),
-                    ...(input.paymentProofReference ? { paymentProofReference: input.paymentProofReference } : {}),
-                  },
-              }),
-          },
-        ),
-      );
-    } finally {
-      activeLiveCommerceMetadata.delete(correlationId);
-    }
-
-    if (!chatResponse.ok) {
-      let safeErrorCode;
-      try {
-        const failure = await chatResponse.json();
-        const code = failure?.error?.code;
-        if (typeof code === "string" && /^[A-Z0-9_]{1,80}$/.test(code)) safeErrorCode = code;
-      } catch { /* keep the public-safe fallback below */ }
-      throw new LiveProcessingError(
-        "commerce-assistant",
-        chatResponse.status,
-        `Commerce assistant request failed${safeErrorCode ? ` (${safeErrorCode})` : ""}.`,
-      );
-    }
-
-    const payload =
-      await chatResponse.json();
-    const reply =
-      payload?.data?.message?.content;
-
-    if (
-      typeof reply !== "string" ||
-      !reply.trim()
-    ) {
-      throw new LiveProcessingError(
-        "response-validation",
-        502,
-        "Commerce assistant returned an invalid reply.",
-      );
-    }
-
-    let image;
-    if (commerceTenantId === "tenant-floes" && process.env.FLOES_WHATSAPP_MEDIA !== "false" && typeof payload?.data?.message?.metadata?.commerceImage === "string") {
-      try { image = JSON.parse(payload.data.message.metadata.commerceImage); } catch { image = undefined; }
-    }
-    const humanEscalation = readHumanEscalation(payload?.data?.toolResults);
-    if (humanEscalation) return Object.freeze({ reply: reply.trim(), ...humanEscalation });
-    const selection = readCatalogSelection([payload.data.message]);
-    const commerce = Object.freeze({ tenantId: commerceTenantId, customerId: identityResult.output?.customerId, conversationId, requestId, correlationId, ...Object.fromEntries(Object.entries(selection).filter(([key]) => ["productId", "variantId", "color", "size", "orderId", "orderStatus"].includes(key))) });
-    return Object.freeze({ reply: reply.trim(), commerce, ...(image ? { messages: Object.freeze([Object.freeze(image), Object.freeze({ type: "text", text: reply.trim() })]) } : {}) });
-  }
+  const processLiveWhatsApp = createLiveWhatsAppProcessor({ commerceTenantId, liveApplication, activeLiveCommerceMetadata });
+  const processLiveOmnichannel = createLiveOmnichannelProcessor({ commerceTenantId, liveApplication, activeLiveCommerceMetadata });
 
   return Object.freeze({
     application,
     processLiveWhatsApp,
+    processLiveOmnichannel,
 
     manager,
 
