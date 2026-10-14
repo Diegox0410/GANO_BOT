@@ -40,7 +40,7 @@ export class ChopifyHttpAdapter implements CommercePort,CommerceSupervisorPort,C
  getProductDetails(c:CommerceRequestContext,i:{readonly productId:string}){return this.call<CommerceProductDetails|undefined>(c,'getProductDetails',i)}
  checkAvailability(c:CommerceRequestContext,i:{readonly productId:string;readonly variantId?:string;readonly size?:string;readonly quantity?:number}){return this.call<CommerceAvailability>(c,'checkAvailability',i)}
  createOrUpdateCustomer(c:CommerceRequestContext,i:CommerceCustomerInput){return this.call<CommerceCustomer>(c,'createOrUpdateCustomer',i)}
- createOpportunity(c:CommerceRequestContext,i:CommerceOpportunityInput){return this.call<CommerceOpportunity>(c,'createOpportunity',{...i,...(c.originConversationId?{conversationId:c.originConversationId}:{})})}
+ createOpportunity(c:CommerceRequestContext,i:CommerceOpportunityInput){return this.call<CommerceOpportunity>(c,'createOpportunity',{...i,conversationId:c.originConversationId??c.conversationId})}
  createOrderDraft(c:CommerceRequestContext,i:CommerceOrderDraftInput){return this.call<CommerceOrderDraft>(c,'createOrderDraft',{...i,conversationId:c.originConversationId??c.conversationId})}
  attachPaymentProof(c:CommerceRequestContext,i:CommercePaymentProofInput){return this.call<CommercePaymentProof>(c,'attachPaymentProof',{...i,conversationId:c.originConversationId??c.conversationId})}
  getOrderStatus(c:CommerceRequestContext,i:{readonly orderId:string}){return this.call<CommerceOrderSnapshot|undefined>(c,'getOrderStatus',{...i,...(c.tenantId==='tenant-floes'&&c.customerId?{customerId:c.customerId}:{})})}
