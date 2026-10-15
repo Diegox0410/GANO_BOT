@@ -4,6 +4,21 @@ import { getGanoFirebaseAdminApp } from "../apps/functions/dist/integrations/fir
 
 const SANDBOX_PROJECT = "floes-commercial-sandbox-2026";
 const CHOPIFY_PREVIEW_HOST = /\.vercel\.app$/i;
+const SAFE_FIREBASE_ERROR_CODES = new Set([
+  "app/invalid-credential",
+  "app/invalid-argument",
+  "auth/insufficient-permission",
+  "auth/invalid-credential",
+  "auth/project-not-found",
+  "auth/internal-error",
+  "ETIMEDOUT",
+  "EAI_AGAIN",
+]);
+
+export function safeFirebaseErrorCode(error) {
+  const code = error && typeof error.code === "string" ? error.code : "";
+  return SAFE_FIREBASE_ERROR_CODES.has(code) ? code : "unknown";
+}
 
 function onlyFloes(value) {
   const tenants = (value ?? "")
@@ -72,11 +87,13 @@ export default async function handler(request, response) {
   }
 
   let firebaseAdminConnected = false;
+  let firebaseAdminErrorCode;
   try {
     await getAuth(getGanoFirebaseAdminApp()).listUsers(1);
     firebaseAdminConnected = true;
-  } catch {
-    // Deliberately return only a boolean; provider errors may contain project details.
+  } catch (error) {
+    // Return only an allowlisted code; provider messages can contain project details.
+    firebaseAdminErrorCode = safeFirebaseErrorCode(error);
   }
 
   const ready = result.ready && firebaseAdminConnected;
@@ -84,6 +101,7 @@ export default async function handler(request, response) {
     ...result,
     ready,
     checks: { ...result.checks, firebaseAdminConnected },
+    ...(firebaseAdminErrorCode ? { firebaseAdminErrorCode } : {}),
     externalChannels: "disabled",
     paymentProcessor: "disabled",
   });
