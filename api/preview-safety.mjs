@@ -66,6 +66,7 @@ export function describePreviewSafety(environment = process.env) {
   return Object.freeze({
     ready: Object.values(checks).every(Boolean),
     firebaseProjectId: SANDBOX_PROJECT,
+    ...(checks.firebaseAdminIdentity ? { firebaseAdminPrincipal: email } : {}),
     tenantId: "tenant-floes",
     checks,
     ...(checks.preview ? {} : { error: "preview-environment-required" }),

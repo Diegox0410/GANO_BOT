@@ -20,8 +20,18 @@ test("safe preview preflight exposes only sandbox and tenant checks", () => {
 
   assert.equal(result.ready, true);
   assert.equal(result.firebaseProjectId, "floes-commercial-sandbox-2026");
+  assert.equal(result.firebaseAdminPrincipal, SAFE_ENVIRONMENT.FIREBASE_ADMIN_CLIENT_EMAIL);
   assert.equal(result.tenantId, "tenant-floes");
   assert.equal(Object.hasOwn(result, "secrets"), false);
+});
+
+test("preflight withholds an Admin principal outside the sandbox identity", () => {
+  const result = describePreviewSafety({
+    ...SAFE_ENVIRONMENT,
+    FIREBASE_ADMIN_CLIENT_EMAIL: "service-account@production-project.iam.gserviceaccount.com",
+  });
+
+  assert.equal(Object.hasOwn(result, "firebaseAdminPrincipal"), false);
 });
 
 test("preflight fails closed for production, another tenant, or a live channel", () => {
