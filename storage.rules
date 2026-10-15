@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Upload and download flows must use a reviewed server endpoint or a
+    // future tenant-scoped rule. No browser access is enabled by default.
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}

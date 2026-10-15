@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // All current hosted reads/writes use Firebase Admin on server functions.
+    // Keep direct browser access closed until a reviewed per-tenant client API exists.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
